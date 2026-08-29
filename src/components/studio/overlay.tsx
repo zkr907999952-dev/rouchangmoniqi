@@ -87,6 +87,7 @@ export function Overlay() {
   const showGutHp = useStudio((s) => s.showGutHp);
   const uiHidden = useStudio((s) => s.uiHidden);
   const abdomenXray = useStudio((s) => s.abdomenXray);
+  const bedStance = useStudio((s) => s.bedStance);
   const interactMode = useStudio((s) => s.interactMode);
   const setInteractMode = useStudio((s) => s.setInteractMode);
   const grabbing = useStudio((s) => s.grabbing);
@@ -223,12 +224,6 @@ export function Overlay() {
         </div>
       </header>
 
-      <div className="pointer-events-none absolute top-16 left-4 hidden w-44 sm:block sm:left-6">
-        <p className="text-xs leading-snug text-muted text-pretty">
-          左键空白处旋转。拖拽：在骨骼上捏软组织。姿势：拉关节，松手后保持。K 骨骼 · W 绑定 · 1-4 表情 · 5-0 动作 · X 透视。
-        </p>
-      </div>
-
       <aside
         className={cn(
           "pointer-events-auto absolute right-4 bottom-4 left-4 max-h-[52vh] overflow-hidden rounded-xl border border-border bg-surface sm:right-6 sm:bottom-auto sm:left-auto sm:top-24 sm:max-h-[calc(100dvh-8rem)] sm:w-80",
@@ -289,6 +284,32 @@ export function Overlay() {
                 {SLIDERS.map((item) => (
                   <SliderRow key={item.id} {...item} />
                 ))}
+              </div>
+              <div className="mt-4">
+                <p className="mb-1.5 text-xs text-muted">站位</p>
+                <div className="grid grid-cols-3 gap-1">
+                  {(
+                    [
+                      { id: "front" as const, label: "站在床前" },
+                      { id: "on" as const, label: "站在床上" },
+                      { id: "lie" as const, label: "躺在床上" },
+                    ] as const
+                  ).map((item) => (
+                    <button
+                      key={item.id}
+                      type="button"
+                      onClick={() => setParam("bedStance", item.id)}
+                      className={cn(
+                        "h-9 rounded-md border px-1 text-[11px] font-medium",
+                        bedStance === item.id
+                          ? "border-accent bg-accent text-accent-fg"
+                          : "border-border bg-surface-2 text-muted hover:text-fg",
+                      )}
+                    >
+                      {item.label}
+                    </button>
+                  ))}
+                </div>
               </div>
               <div className="mt-4 grid grid-cols-2 gap-2">
                 <Toggle

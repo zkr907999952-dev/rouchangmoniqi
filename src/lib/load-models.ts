@@ -8,6 +8,7 @@ export const MODEL_FILES = [
   { id: "intestines" as const, url: "/models/intestines.glb", bytes: 15_629_192, path: "/models/", hint: "大小肠" },
   { id: "pelvis" as const, url: "/models/pelvis.glb", bytes: 760_380, path: "/models/", hint: "盆腔" },
   { id: "arm" as const, url: "/models/arm.glb", bytes: 139_896, path: "/models/", hint: "手臂" },
+  { id: "room" as const, url: "/models/room.glb", bytes: 16_153_124, path: "/models/", hint: "房间" },
 ];
 
 const TOTAL_BYTES = MODEL_FILES.reduce((s, f) => s + f.bytes, 0);
@@ -17,6 +18,7 @@ export type LoadedScenes = {
   intestines: THREE.Group;
   pelvis: THREE.Group;
   arm: THREE.Group;
+  room: THREE.Group;
 };
 
 function formatMb(n: number) {
@@ -66,10 +68,10 @@ export function useModelAssets(enabled: boolean): LoadedScenes | null {
   useEffect(() => {
     if (!enabled) return;
     let cancelled = false;
-    const received = [0, 0, 0, 0];
+    const received = MODEL_FILES.map(() => 0);
 
     const bumpDownload = () => {
-      const got = received[0] + received[1] + received[2] + received[3];
+      const got = received.reduce((a, n) => a + n, 0);
       const pct = Math.min(86, Math.round((got / TOTAL_BYTES) * 86));
       useStudio.setState({
         loading: true,
@@ -116,9 +118,12 @@ export function useModelAssets(enabled: boolean): LoadedScenes | null {
         useStudio.setState({ loadProgress: 97, loadHint: "解析手臂" });
         const arm = await parseGlb(buffers[3]!, MODEL_FILES[3]!.path);
         if (cancelled) return;
+        useStudio.setState({ loadProgress: 98, loadHint: "解析房间" });
+        const room = await parseGlb(buffers[4]!, MODEL_FILES[4]!.path);
+        if (cancelled) return;
 
-        useStudio.setState({ loadProgress: 98, loadHint: "组装柔体" });
-        setScenes({ character, intestines, pelvis, arm });
+        useStudio.setState({ loadProgress: 99, loadHint: "组装柔体" });
+        setScenes({ character, intestines, pelvis, arm, room });
       } catch (err) {
         if (cancelled) return;
         const message = err instanceof Error ? err.message : "模型加载失败";

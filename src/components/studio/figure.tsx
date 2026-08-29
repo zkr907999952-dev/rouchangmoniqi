@@ -42,9 +42,6 @@ function meshKey(mesh: THREE.Object3D) {
 function isTorsoMesh(mesh: THREE.Object3D) {
   const k = meshKey(mesh);
   if (/hair|eye|mouth|charm|wing|lash|\.001/.test(k) && !/skin|dress|body/.test(k)) return false;
-  const m = mesh as THREE.Mesh;
-  const n = (m.geometry?.getAttribute("position") as THREE.BufferAttribute | undefined)?.count ?? 0;
-  if (n > 35000) return false;
   return TORSO_RE.test(k);
 }
 
@@ -62,6 +59,7 @@ function bindHint(mesh: THREE.Object3D) {
 }
 
 function shouldBind(mesh: THREE.Object3D) {
+  if (mesh.userData.xrayOverlay) return false;
   const k = meshKey(mesh);
   if (SKIP_BIND_RE.test(k)) return false;
   const m = mesh as THREE.Mesh;
@@ -926,61 +924,113 @@ function polishOrgans(root: THREE.Object3D, kind: "gut" | "pelvis") {
       m.emissiveIntensity = 0;
       m.transparent = false;
       m.depthWrite = true;
+      m.depthTest = true;
       m.needsUpdate = true;
       return m;
     });
     mesh.material = next.length === 1 ? next[0] : next;
-    mesh.renderOrder = 0;
+    mesh.renderOrder = 1;
     mesh.frustumCulled = false;
     mesh.raycast = () => {};
   });
 }
 
-function attachXray(mesh: THREE.Mesh, y0: number, y1: number, xMax: number, zFront: number, list: THREE.Material[]) {
+function injectXray(shader: THREE.WebGLProgramParametersWithUniforms, y0: number, y1: number, xMax: number, zFront: number) {
+  shader.uniforms.uXray = { value: 0 };
+  shader.uniforms.uY0 = { value: y0 };
+  shader.uniforms.uY1 = { value: y1 };
+  shader.uniforms.uXMax = { value: xMax };
+  shader.uniforms.uZFront = { value: zFront };
+  shader.vertexShader = shader.vertexShader
+    .replace("#include <common>", "#include <common>\nvarying vec3 vBodyW;")
+    .replace(
+      "#include <begin_vertex>",
+      "#include <begin_vertex>\nvBodyW = (modelMatrix * vec4(transformed, 1.0)).xyz;",
+    );
+  shader.fragmentShader = shader.fragmentShader.replace(
+    "#include <common>",
+    `#include <common>
+uniform float uXray; uniform float uY0; uniform float uY1; uniform float uXMax; uniform float uZFront;
+varying vec3 vBodyW;
+float xrayHole() {
+  float band = smoothstep(uY0, uY0 + 0.08, vBodyW.y) * (1.0 - smoothstep(uY1 - 0.08, uY1, vBodyW.y));
+  float torso = 1.0 - smoothstep(uXMax * 0.65, uXMax + 0.1, abs(vBodyW.x));
+  float front = smoothstep(uZFront - 0.16, uZFront + 0.04, vBodyW.z);
+  return clamp(band * torso * front * uXray, 0.0, 1.0);
+}`,
+  );
+}
+
+function attachXray(
+  mesh: THREE.Mesh,
+  y0: number,
+  y1: number,
+  xMax: number,
+  zFront: number,
+  list: THREE.Material[],
+  overlays: THREE.Mesh[],
+) {
   const mats = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
-  const next = mats.map((mat) => {
+  const punchMats = mats.map((mat) => {
     if (!mat) return mat;
-    const cloned = mat.clone();
-    cloned.transparent = true;
-    cloned.side = THREE.FrontSide;
-    cloned.depthWrite = true;
-    cloned.onBeforeCompile = (shader) => {
-      shader.uniforms.uXray = { value: 0 };
-      shader.uniforms.uY0 = { value: y0 };
-      shader.uniforms.uY1 = { value: y1 };
-      shader.uniforms.uXMax = { value: xMax };
-      shader.uniforms.uZFront = { value: zFront };
-      shader.vertexShader = shader.vertexShader
-        .replace("#include <common>", "#include <common>\nvarying vec3 vBodyW;")
-        .replace(
-          "#include <begin_vertex>",
-          "#include <begin_vertex>\nvBodyW = (modelMatrix * vec4(transformed, 1.0)).xyz;",
-        );
-      shader.fragmentShader = shader.fragmentShader
-        .replace(
-          "#include <common>",
-          "#include <common>\nuniform float uXray; uniform float uY0; uniform float uY1; uniform float uXMax; uniform float uZFront; varying vec3 vBodyW;",
-        )
-        .replace(
-          "#include <dithering_fragment>",
-          `float band = smoothstep(uY0, uY0 + 0.05, vBodyW.y) * (1.0 - smoothstep(uY1 - 0.05, uY1, vBodyW.y));
-           float torso = 1.0 - smoothstep(uXMax, uXMax + 0.05, abs(vBodyW.x));
-           float front = smoothstep(uZFront - 0.07, uZFront - 0.02, vBodyW.z);
-           float win = clamp(band * torso * uXray, 0.0, 1.0);
-           float hole = win * front;
-           if (!gl_FrontFacing) discard;
-           if (hole > 0.55) discard;
-           gl_FragColor.rgb = mix(gl_FragColor.rgb, gl_FragColor.rgb * 0.38, hole);
-           gl_FragColor.a = mix(gl_FragColor.a, 0.05, hole);
-           #include <dithering_fragment>`,
-        );
-      cloned.userData.shader = shader;
+    const punch = mat.clone();
+    punch.transparent = false;
+    punch.opacity = 1;
+    punch.side = THREE.FrontSide;
+    punch.depthWrite = true;
+    punch.depthTest = true;
+    punch.onBeforeCompile = (shader) => {
+      injectXray(shader, y0, y1, xMax, zFront);
+      shader.fragmentShader = shader.fragmentShader.replace(
+        "#include <dithering_fragment>",
+        `if (!gl_FrontFacing) discard;
+         if (xrayHole() > 0.07) discard;
+         #include <dithering_fragment>`,
+      );
+      punch.userData.shader = shader;
     };
-    cloned.needsUpdate = true;
-    list.push(cloned);
-    return cloned;
+    punch.needsUpdate = true;
+    list.push(punch);
+    return punch;
   });
-  mesh.material = next.length === 1 ? next[0] : next;
+  mesh.material = punchMats.length === 1 ? punchMats[0] : punchMats;
+
+  const fadeMats = punchMats.map((punch) => {
+    if (!punch) return punch;
+    const fade = punch.clone();
+    fade.transparent = true;
+    fade.opacity = 1;
+    fade.depthWrite = false;
+    fade.depthTest = true;
+    fade.side = THREE.FrontSide;
+    fade.onBeforeCompile = (shader) => {
+      injectXray(shader, y0, y1, xMax, zFront);
+      shader.fragmentShader = shader.fragmentShader.replace(
+        "#include <dithering_fragment>",
+        `if (!gl_FrontFacing) discard;
+         float hole = xrayHole();
+         if (hole < 0.012) discard;
+         float fade = smoothstep(0.012, 1.0, hole);
+         gl_FragColor.rgb *= mix(1.0, 0.5, fade);
+         gl_FragColor.a *= mix(0.96, 0.05, pow(fade, 0.72));
+         #include <dithering_fragment>`,
+      );
+      fade.userData.shader = shader;
+    };
+    fade.needsUpdate = true;
+    list.push(fade);
+    return fade;
+  });
+
+  const overlay = new THREE.Mesh(mesh.geometry, fadeMats.length === 1 ? fadeMats[0] : fadeMats);
+  overlay.name = "__xrayOverlay";
+  overlay.userData.xrayOverlay = true;
+  overlay.frustumCulled = false;
+  overlay.renderOrder = 6;
+  overlay.raycast = () => {};
+  overlay.visible = false;
+  overlays.push(overlay);
+  return overlay;
 }
 
 export function Figure({ controlsRef, character, intestines, pelvis, arm }: FigureProps) {
@@ -1033,6 +1083,8 @@ function FittedFigure({
 
   const setup = useMemo(() => {
     const xrayList: THREE.Material[] = [];
+    const xrayOverlays: THREE.Mesh[] = [];
+    const xrayHosts: THREE.Mesh[] = [];
     const root = new THREE.Group();
     const fitted = fitStanding(character, 1.66);
     const body = flattenToWorld(fitted);
@@ -1131,8 +1183,12 @@ function FittedFigure({
         return;
       }
       bindMesh(mesh);
-      if (isTorsoMesh(mesh)) attachXray(mesh, yX0, yX1, 0.12, skinZ - 0.01, xrayList);
+      if (isTorsoMesh(mesh)) {
+        const overlay = attachXray(mesh, yX0, yX1, 0.12, skinZ - 0.01, xrayList, xrayOverlays);
+        if (overlay) xrayHosts.push(mesh);
+      }
     });
+    for (let i = 0; i < xrayOverlays.length; i++) xrayHosts[i]?.add(xrayOverlays[i]!);
 
     gut.traverse((obj) => {
       const mesh = obj as THREE.Mesh;
@@ -1224,6 +1280,7 @@ function FittedFigure({
       y1: yAb1,
       abdomen,
       xrayList,
+      xrayOverlays,
       gutRoot: gut,
       pelvisRoot: pelvic,
       peristalsis,
@@ -1438,10 +1495,18 @@ function FittedFigure({
     for (const mat of setup.xrayList) {
       const shader = mat.userData.shader as { uniforms?: { uXray?: { value: number } } } | undefined;
       if (shader?.uniforms?.uXray) shader.uniforms.uXray.value = xray;
-      mat.depthWrite = xray < 0.15;
-      mat.side = THREE.FrontSide;
-      mat.transparent = xray > 0.05;
+      if (mat.transparent) {
+        mat.depthWrite = false;
+        mat.depthTest = true;
+        mat.side = THREE.FrontSide;
+      } else {
+        mat.transparent = false;
+        mat.depthWrite = true;
+        mat.depthTest = true;
+        mat.side = THREE.FrontSide;
+      }
     }
+    for (const ov of setup.xrayOverlays) ov.visible = xray > 0.03 && !s.showWeights;
     const show = s.showOrgans && xray > 0.08;
     setup.gutRoot.visible = show;
     setup.pelvisRoot.visible = show;

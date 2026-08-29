@@ -3,6 +3,7 @@ import type { ExpressionId, PoseId } from "@/lib/softbody/soft-skeleton";
 
 export type PresetId = "soft" | "firm" | "jelly" | "athletic";
 export type InteractMode = "drag" | "pose" | "strike" | "fist";
+export type BedStance = "front" | "on" | "lie";
 
 export type StudioParams = {
   stiffness: number;
@@ -39,6 +40,7 @@ export type StudioParams = {
   fistThrustStart: number;
   fistStirSpeed: number;
   fistStirRadius: number;
+  bedStance: BedStance;
   uiHidden: boolean;
 };
 
@@ -83,6 +85,7 @@ export const PRESETS: Record<
     fistThrustStart: 0.025,
     fistStirSpeed: 0.55,
     fistStirRadius: 0.4,
+    bedStance: "front",
     uiHidden: false,
   },
   firm: {
@@ -122,6 +125,7 @@ export const PRESETS: Record<
     fistThrustStart: 0.025,
     fistStirSpeed: 0.55,
     fistStirRadius: 0.4,
+    bedStance: "front",
     uiHidden: false,
   },
   jelly: {
@@ -161,6 +165,7 @@ export const PRESETS: Record<
     fistThrustStart: 0.025,
     fistStirSpeed: 0.55,
     fistStirRadius: 0.4,
+    bedStance: "front",
     uiHidden: false,
   },
   athletic: {
@@ -200,6 +205,7 @@ export const PRESETS: Record<
     fistThrustStart: 0.025,
     fistStirSpeed: 0.55,
     fistStirRadius: 0.4,
+    bedStance: "front",
     uiHidden: false,
   },
 };
@@ -283,6 +289,7 @@ export const useStudio = create<StudioState>((set) => ({
       fistThrustStart: s.fistThrustStart,
       fistStirSpeed: s.fistStirSpeed,
       fistStirRadius: s.fistStirRadius,
+      bedStance: s.bedStance,
       showLattice: s.showLattice,
       showWeights: s.showWeights,
       uiHidden: s.uiHidden,

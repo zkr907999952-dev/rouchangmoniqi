@@ -18,6 +18,7 @@ export function StudioApp() {
             intestines={scenes.intestines}
             pelvis={scenes.pelvis}
             arm={scenes.arm}
+            room={scenes.room}
           />
         </Suspense>
       ) : null}
