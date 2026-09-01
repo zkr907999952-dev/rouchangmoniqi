@@ -1086,6 +1086,7 @@ function FittedFigure({
   const lastAz = useRef<number | null>(null);
   const lastPol = useRef<number | null>(null);
   const bayonetPenRef = useRef(0);
+  const rmbDown = useRef(false);
   const { camera, gl, raycaster, pointer } = useThree();
 
   const setup = useMemo(() => {
@@ -1328,8 +1329,15 @@ function FittedFigure({
 
   useEffect(() => {
     const el = gl.domElement;
+    const onPointerDown = (e: PointerEvent) => {
+      if (e.button === 2) rmbDown.current = true;
+    };
+    const onPointerUp = (e: PointerEvent) => {
+      if (e.button === 2) rmbDown.current = false;
+    };
     const onWheel = (e: WheelEvent) => {
       const s = useStudio.getState();
+      if (!rmbDown.current) return;
       if (s.interactMode !== "bayonet" || !setup.knife.hasEntry) return;
       e.preventDefault();
       e.stopPropagation();
@@ -1338,8 +1346,16 @@ function FittedFigure({
       bayonetPenRef.current = next;
       s.setBayonetPen(next);
     };
+    el.addEventListener("pointerdown", onPointerDown);
+    window.addEventListener("pointerup", onPointerUp);
+    window.addEventListener("pointercancel", onPointerUp);
     el.addEventListener("wheel", onWheel, { passive: false, capture: true });
-    return () => el.removeEventListener("wheel", onWheel, true);
+    return () => {
+      el.removeEventListener("pointerdown", onPointerDown);
+      window.removeEventListener("pointerup", onPointerUp);
+      window.removeEventListener("pointercancel", onPointerUp);
+      el.removeEventListener("wheel", onWheel, true);
+    };
   }, [gl, setup]);
 
   useEffect(() => {
@@ -1450,6 +1466,9 @@ function FittedFigure({
             setup.knife.dragTo(_target);
             grab.current.origin.copy(setup.knife.handle);
             grab.current.planePoint.copy(setup.knife.handle);
+            const t = setup.knife.pen01();
+            bayonetPenRef.current = t;
+            s.setBayonetPen(t);
           }
         } else if (grab.current.mode === "pose") {
           setup.skeleton.setPoseDrag(bone, o.x, o.y, o.z, _target.x, _target.y, _target.z);
@@ -1467,9 +1486,18 @@ function FittedFigure({
     setup.fist.setMaxScale(s.fistMaxDepth);
     setup.knife.setEnabled(s.interactMode === "bayonet");
     if (controlsRef.current) {
-      controlsRef.current.enableZoom = !(s.interactMode === "bayonet" && setup.knife.hasEntry);
+      controlsRef.current.enableZoom = !(
+        rmbDown.current &&
+        s.interactMode === "bayonet" &&
+        setup.knife.hasEntry
+      );
     }
-    if (s.interactMode === "bayonet" && setup.knife.hasEntry) {
+    if (!s.bayonetHasEntry && setup.knife.hasEntry) {
+      setup.knife.releaseEntry();
+    }
+    const grabbingKnife = grab.current?.mode === "bayonet";
+    const animating = s.bayonetPump || setup.knife.isAuto;
+    if (s.interactMode === "bayonet" && setup.knife.hasEntry && !grabbingKnife && !animating) {
       if (Math.abs(s.bayonetPen - bayonetPenRef.current) > 1e-4) {
         bayonetPenRef.current = s.bayonetPen;
         setup.knife.setPen01(s.bayonetPen);
@@ -1527,7 +1555,20 @@ function FittedFigure({
     setup.strike.step(dt);
     setup.strike.apply(s.strikeRebound);
     setup.fist.apply(s.fistGut, autoFist);
-    setup.knife.apply(dt, s.fistGut, setup.gutHealth);
+    setup.knife.apply(dt, s.fistGut, setup.gutHealth, {
+      pump: s.bayonetPump,
+      grabbing: grabbingKnife,
+    });
+    if (setup.knife.consumeAutoReleased()) {
+      bayonetPenRef.current = 0;
+      useStudio.setState({ bayonetHasEntry: false, bayonetPen: 0 });
+    } else if ((s.bayonetPump || setup.knife.isAuto) && setup.knife.hasEntry) {
+      const t = setup.knife.pen01();
+      if (Math.abs(t - s.bayonetPen) > 0.012) {
+        bayonetPenRef.current = t;
+        s.setBayonetPen(t);
+      }
+    }
     if (setup.knife.consumePunctureEvent()) {
       const e = setup.knife.entry;
       const ddir = setup.knife.dir;
@@ -1654,7 +1695,29 @@ function FittedFigure({
           rawPen: setup.knife.rawPen,
           enabled: setup.knife.enabled,
           storePen: t,
+          wounds: setup.knife.wounds.children.length,
         };
+      };
+      vela.pickBayonet = (dx: number, dy: number, dz: number) => {
+        const p = setup.navel.clone().add(new THREE.Vector3(dx, dy, dz));
+        setup.knife.setEnabled(true);
+        setup.knife.pick(p, new THREE.Vector3(0, 0, 1));
+        bayonetPenRef.current = 0;
+        useStudio.setState({
+          interactMode: "bayonet",
+          bayonetHasEntry: true,
+          bayonetPen: 0,
+          showOrgans: true,
+          abdomenXray: Math.max(0.38, useStudio.getState().abdomenXray),
+          showGutHp: true,
+        });
+        return { entry: setup.knife.entry.toArray(), wounds: setup.knife.wounds.children.length };
+      };
+      vela.nextStab = () => {
+        setup.knife.releaseEntry();
+        bayonetPenRef.current = 0;
+        useStudio.setState({ bayonetHasEntry: false, bayonetPen: 0 });
+        return { wounds: setup.knife.wounds.children.length, hasEntry: setup.knife.hasEntry };
       };
       if (energyTick.current % 2 === 0) {
         let minHp = 1;
@@ -1672,10 +1735,14 @@ function FittedFigure({
           handle: setup.knife.handle.toArray(),
           dir: setup.knife.dir.toArray(),
           restAxis: setup.knife.restAxis.toArray(),
+          edge: setup.knife.edgeWorld.toArray(),
           cone: 30,
           wounds: setup.knife.wounds.children.length,
           wound0: setup.knife.wounds.children[0]
             ? (setup.knife.wounds.children[0] as THREE.Mesh).position.toArray()
+            : null,
+          wound1: setup.knife.wounds.children[1]
+            ? (setup.knife.wounds.children[1] as THREE.Mesh).position.toArray()
             : null,
           minHp: +minHp.toFixed(3),
         };
@@ -1746,8 +1813,10 @@ function FittedFigure({
         if (_normal.dot(_camDir) > 0) _normal.negate();
         setup.knife.pick(_hit, _normal);
         bayonetPenRef.current = 0;
-        useStudio.getState().setBayonetHasEntry(true);
-        useStudio.getState().setBayonetPen(0);
+        const st = useStudio.getState();
+        st.setBayonetHasEntry(true);
+        st.setBayonetPen(0);
+        if (st.bayonetAuto && !st.bayonetPump) setup.knife.beginAuto();
         if (pokeRef.current) {
           pokeRef.current.position.copy(_hit);
           pokeRef.current.visible = true;

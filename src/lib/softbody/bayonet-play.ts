@@ -38,6 +38,7 @@ export class BayonetPlay {
   readonly handle = new THREE.Vector3();
   readonly tip = new THREE.Vector3();
   readonly dir = new THREE.Vector3(0, 0, -1);
+  readonly edgeWorld = new THREE.Vector3(0, -1, 0);
   private tubes: TubeAlong[] = [];
   private knife: THREE.Object3D | null = null;
   private marker: THREE.Mesh | null = null;
@@ -333,6 +334,7 @@ export class BayonetPlay {
       _xA.negate();
       _zA.negate();
     }
+    this.edgeWorld.copy(_zA);
     _mat.makeBasis(_xA, this.dir, _zA);
     this.knife.quaternion.setFromRotationMatrix(_mat);
   }
@@ -379,6 +381,9 @@ export class BayonetPlay {
     });
     const mesh = new THREE.Mesh(geo, mat);
     mesh.userData.twist = (Math.random() - 0.5) * 0.55;
+    mesh.userData.entry = this.entry.clone();
+    mesh.userData.normal = this.entryNormal.clone();
+    mesh.userData.dir = this.dir.clone();
     mesh.frustumCulled = false;
     mesh.renderOrder = 18;
     mesh.raycast = () => {};

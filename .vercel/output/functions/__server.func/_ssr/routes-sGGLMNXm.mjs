@@ -1,13 +1,13 @@
 import { i as __toESM } from "../_runtime.mjs";
 import { a as require_jsx_runtime, o as require_react } from "../_libs/@radix-ui/react-collection+[...].mjs";
 import { B as MathUtils, L as LoadingManager, _ as Euler, m as Color, st as Quaternion, wt as Vector3 } from "../_libs/@react-three/drei+[...].mjs";
-import { _ as EyeOff, a as Sword, c as RotateCw, d as MousePointerClick, f as Heart, g as Eye, h as Grab, l as RotateCcw, m as Grid3x3, n as Wrench, o as Settings2, p as Hand, r as Wind, s as Scan, t as Zap, u as Pause, v as Crosshair, y as Activity } from "../_libs/lucide-react.mjs";
+import { _ as Eye, a as Sword, b as ChevronsUpDown, c as RotateCw, d as Pause, f as MousePointerClick, g as Grab, h as Grid3x3, l as RotateCcw, m as Hand, n as Wrench, o as Settings2, p as Heart, r as Wind, s as Scan, t as Zap, u as Repeat, v as EyeOff, x as Activity, y as Crosshair } from "../_libs/lucide-react.mjs";
 import { t as GLTFLoader } from "../_libs/three-stdlib.mjs";
 import { t as create } from "../_libs/zustand.mjs";
 import { i as SliderTrack, n as SliderRange, r as SliderThumb, t as Slider } from "../_libs/@radix-ui/react-slider+[...].mjs";
 import { t as clsx } from "../_libs/clsx.mjs";
 import { t as twMerge } from "../_libs/tailwind-merge.mjs";
-//#region node_modules/.nitro/vite/services/ssr/assets/routes-Ni9NaLPO.js
+//#region node_modules/.nitro/vite/services/ssr/assets/routes-sGGLMNXm.js
 var import_react = /* @__PURE__ */ __toESM(require_react());
 var import_jsx_runtime = require_jsx_runtime();
 var __defProp = Object.defineProperty;
@@ -1492,6 +1492,8 @@ var useStudio = create((set) => ({
 	retryNonce: 0,
 	bayonetHasEntry: false,
 	bayonetPen: 0,
+	bayonetAuto: false,
+	bayonetPump: false,
 	setParam: (key, value) => set((s) => ({
 		...s,
 		[key]: value,
@@ -1538,6 +1540,14 @@ var useStudio = create((set) => ({
 	setGrabbing: (grabbing) => set({ grabbing }),
 	setBayonetHasEntry: (bayonetHasEntry) => set({ bayonetHasEntry }),
 	setBayonetPen: (bayonetPen) => set({ bayonetPen: Math.max(0, Math.min(1, bayonetPen)) }),
+	setBayonetAuto: (bayonetAuto) => set((s) => ({
+		bayonetAuto,
+		bayonetPump: bayonetAuto ? false : s.bayonetPump
+	})),
+	setBayonetPump: (bayonetPump) => set((s) => ({
+		bayonetPump,
+		bayonetAuto: bayonetPump ? false : s.bayonetAuto
+	})),
 	shake: () => set((s) => ({ shakeNonce: s.shakeNonce + 1 })),
 	fireStrike: (point = null) => set((s) => ({
 		strikeNonce: s.strikeNonce + 1,
@@ -1774,7 +1784,11 @@ function Overlay() {
 	const fistStirRadius = useStudio((s) => s.fistStirRadius);
 	const bayonetHasEntry = useStudio((s) => s.bayonetHasEntry);
 	const bayonetPen = useStudio((s) => s.bayonetPen);
+	const bayonetAuto = useStudio((s) => s.bayonetAuto);
+	const bayonetPump = useStudio((s) => s.bayonetPump);
 	const setBayonetPen = useStudio((s) => s.setBayonetPen);
+	const setBayonetAuto = useStudio((s) => s.setBayonetAuto);
+	const setBayonetPump = useStudio((s) => s.setBayonetPump);
 	(0, import_react.useEffect)(() => {
 		const onKey = (e) => {
 			const tag = e.target?.tagName;
@@ -2073,7 +2087,7 @@ function Overlay() {
 								panel === "interact" ? /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(import_jsx_runtime.Fragment, { children: [
 									/* @__PURE__ */ (0, import_jsx_runtime.jsx)("p", {
 										className: "mb-3 text-xs leading-relaxed text-muted",
-										children: "左键点身体操作。拖拽捏软组织，姿势拉关节，击腹点击释放环状冲击，拳交拖动手臂沿大肠插入，刺刀先点腹壁再拖角度，滚轮控制深度。"
+										children: "左键点身体操作。拖拽捏软组织，姿势拉关节，击腹点击释放环状冲击，拳交拖动手臂沿大肠插入，刺刀点腹壁后拖角度与深度。"
 									}),
 									/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
 										className: "grid grid-cols-2 gap-2",
@@ -2255,33 +2269,63 @@ function Overlay() {
 									}) : null,
 									interactMode === "bayonet" ? /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
 										className: "mt-3",
-										children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("p", {
-											className: "text-xs leading-relaxed text-muted",
-											children: bayonetHasEntry ? "已锁定刺入点。拖动在垂直±30°锥内改变刺入角度，滚轮调节深度。贴上皮肤会先挤压，再刺入。" : "先点击腹壁选择刺入点，刺刀会垂直对准该点出现在体外。"
-										}), bayonetHasEntry ? /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("label", {
-											className: "mt-3 block",
-											children: [/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("span", {
-												className: "mb-1.5 flex items-center justify-between text-xs text-muted",
-												children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { children: "刺入深度" }), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", {
-													className: "tabular-nums text-fg",
-													children: bayonetPen.toFixed(2)
+										children: [
+											/* @__PURE__ */ (0, import_jsx_runtime.jsx)("p", {
+												className: "text-xs leading-relaxed text-muted",
+												children: bayonetHasEntry ? "已锁定刺入点。拖动同时改角度（垂直±30°）和深度。按住右键滚轮也可调深度。刀伤会保留到复位。" : "点击腹壁选择刺入点。刀伤会一直留着，直到点复位。"
+											}),
+											/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+												className: "mt-3 grid grid-cols-2 gap-2",
+												children: [
+													/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("button", {
+														type: "button",
+														onClick: () => {
+															useStudio.getState().setBayonetHasEntry(false);
+															useStudio.getState().setBayonetPen(0);
+														},
+														disabled: !bayonetHasEntry,
+														className: cn("inline-flex h-10 items-center justify-center gap-1.5 rounded-md border text-xs font-medium", bayonetHasEntry ? "border-border bg-surface-2 text-fg hover:text-fg" : "border-border bg-bg text-muted opacity-50"),
+														children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)(Repeat, { className: "size-3.5" }), "再次刺入"]
+													}),
+													/* @__PURE__ */ (0, import_jsx_runtime.jsx)(Toggle, {
+														active: bayonetAuto,
+														onClick: () => setBayonetAuto(!bayonetAuto),
+														icon: /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Zap, { className: "size-3.5" }),
+														label: "自动刺入"
+													}),
+													/* @__PURE__ */ (0, import_jsx_runtime.jsx)(Toggle, {
+														active: bayonetPump,
+														onClick: () => setBayonetPump(!bayonetPump),
+														icon: /* @__PURE__ */ (0, import_jsx_runtime.jsx)(ChevronsUpDown, { className: "size-3.5" }),
+														label: "抽插"
+													})
+												]
+											}),
+											bayonetHasEntry ? /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("label", {
+												className: "mt-3 block",
+												children: [/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("span", {
+													className: "mb-1.5 flex items-center justify-between text-xs text-muted",
+													children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { children: "刺入深度" }), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", {
+														className: "tabular-nums text-fg",
+														children: bayonetPen.toFixed(2)
+													})]
+												}), /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(Slider, {
+													value: [bayonetPen],
+													min: 0,
+													max: 1,
+													step: .01,
+													onValueChange: (v) => {
+														const n = v[0];
+														if (typeof n === "number") setBayonetPen(n);
+													},
+													className: "relative flex h-5 w-full touch-none items-center",
+													children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)(SliderTrack, {
+														className: "relative h-1 grow rounded-full bg-surface-2",
+														children: /* @__PURE__ */ (0, import_jsx_runtime.jsx)(SliderRange, { className: "absolute h-full rounded-full bg-accent" })
+													}), /* @__PURE__ */ (0, import_jsx_runtime.jsx)(SliderThumb, { className: "block size-3.5 rounded-full bg-fg shadow-sm outline-none ring-2 ring-transparent focus-visible:ring-accent" })]
 												})]
-											}), /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(Slider, {
-												value: [bayonetPen],
-												min: 0,
-												max: 1,
-												step: .01,
-												onValueChange: (v) => {
-													const n = v[0];
-													if (typeof n === "number") setBayonetPen(n);
-												},
-												className: "relative flex h-5 w-full touch-none items-center",
-												children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)(SliderTrack, {
-													className: "relative h-1 grow rounded-full bg-surface-2",
-													children: /* @__PURE__ */ (0, import_jsx_runtime.jsx)(SliderRange, { className: "absolute h-full rounded-full bg-accent" })
-												}), /* @__PURE__ */ (0, import_jsx_runtime.jsx)(SliderThumb, { className: "block size-3.5 rounded-full bg-fg shadow-sm outline-none ring-2 ring-transparent focus-visible:ring-accent" })]
-											})]
-										}) : null]
+											}) : null
+										]
 									}) : null,
 									interactMode === "strike" ? /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
 										className: "mt-3",
@@ -2411,7 +2455,7 @@ function Overlay() {
 									children: [
 										/* @__PURE__ */ (0, import_jsx_runtime.jsx)("p", {
 											className: "text-xs leading-relaxed text-muted",
-											children: "选择刺刀后，点击腹壁确定刺入点。拖动改变刺入角度（垂直±30°），滚轮或滑条控制深度。"
+											children: "点腹壁确定刺入点。拖动改角度和深度；按住右键时滚轮调深度。刀伤保留到复位。"
 										}),
 										/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
 											className: "grid grid-cols-3 gap-2",
@@ -2425,9 +2469,38 @@ function Overlay() {
 												children: /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Crosshair, { className: "size-4 opacity-40" })
 											}, i))]
 										}),
-										interactMode === "bayonet" ? /* @__PURE__ */ (0, import_jsx_runtime.jsx)("p", {
-											className: "text-xs text-muted",
-											children: bayonetHasEntry ? "刺入点已锁定。拖动改角度，滚轮调深度。" : "装备中 · 点击腹壁选择刺入点。"
+										interactMode === "bayonet" ? /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+											className: "flex flex-col gap-2",
+											children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("p", {
+												className: "text-xs text-muted",
+												children: bayonetHasEntry ? "刺入点已锁定。拖动改角度和深度。" : bayonetAuto ? "自动刺入已开：点腹壁后会垂直刺入，再等待下一次。" : "装备中 · 点击腹壁选择刺入点。"
+											}), /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+												className: "grid grid-cols-2 gap-2",
+												children: [
+													/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("button", {
+														type: "button",
+														onClick: () => {
+															useStudio.getState().setBayonetHasEntry(false);
+															useStudio.getState().setBayonetPen(0);
+														},
+														disabled: !bayonetHasEntry,
+														className: cn("inline-flex h-10 items-center justify-center gap-1.5 rounded-md border text-xs font-medium", bayonetHasEntry ? "border-border bg-surface-2 text-fg" : "border-border bg-bg text-muted opacity-50"),
+														children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)(Repeat, { className: "size-3.5" }), "再次刺入"]
+													}),
+													/* @__PURE__ */ (0, import_jsx_runtime.jsx)(Toggle, {
+														active: bayonetAuto,
+														onClick: () => setBayonetAuto(!bayonetAuto),
+														icon: /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Zap, { className: "size-3.5" }),
+														label: "自动刺入"
+													}),
+													/* @__PURE__ */ (0, import_jsx_runtime.jsx)(Toggle, {
+														active: bayonetPump,
+														onClick: () => setBayonetPump(!bayonetPump),
+														icon: /* @__PURE__ */ (0, import_jsx_runtime.jsx)(ChevronsUpDown, { className: "size-3.5" }),
+														label: "抽插"
+													})
+												]
+											})]
 										}) : /* @__PURE__ */ (0, import_jsx_runtime.jsx)("p", {
 											className: "text-xs text-muted",
 											children: "点击刺刀装备。"
@@ -2448,7 +2521,7 @@ function Overlay() {
 							children: "/"
 						}),
 						/* @__PURE__ */ (0, import_jsx_runtime.jsx)(Activity, { className: "size-3.5" }),
-						/* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { children: "右键旋转 · 左键点身体操作 · T 切换互动 · 刺刀滚轮调深度 · X 透视" })
+						/* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { children: "右键旋转 · 左键点身体 · 按住右键滚轮调刺入深度 · T 切换互动 · X 透视" })
 					]
 				})
 			] })
@@ -2660,7 +2733,7 @@ function useModelAssets(enabled) {
 	}, [enabled, retryNonce]);
 	return scenes;
 }
-var Scene = (0, import_react.lazy)(() => import("./scene-Bmos2aQN.mjs"));
+var Scene = (0, import_react.lazy)(() => import("./scene-BIIpjV85.mjs"));
 function StudioApp() {
 	const [mounted, setMounted] = (0, import_react.useState)(false);
 	(0, import_react.useEffect)(() => setMounted(true), []);

@@ -1,6 +1,7 @@
 import { useEffect, useState, type ReactNode } from "react";
 import {
   Activity,
+  ChevronsUpDown,
   Crosshair,
   Eye,
   EyeOff,
@@ -10,6 +11,7 @@ import {
   Heart,
   MousePointerClick,
   Pause,
+  Repeat,
   RotateCcw,
   RotateCw,
   Scan,
@@ -112,7 +114,11 @@ export function Overlay() {
   const fistStirRadius = useStudio((s) => s.fistStirRadius);
   const bayonetHasEntry = useStudio((s) => s.bayonetHasEntry);
   const bayonetPen = useStudio((s) => s.bayonetPen);
+  const bayonetAuto = useStudio((s) => s.bayonetAuto);
+  const bayonetPump = useStudio((s) => s.bayonetPump);
   const setBayonetPen = useStudio((s) => s.setBayonetPen);
+  const setBayonetAuto = useStudio((s) => s.setBayonetAuto);
+  const setBayonetPump = useStudio((s) => s.setBayonetPump);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -424,7 +430,7 @@ export function Overlay() {
           {panel === "interact" ? (
             <>
               <p className="mb-3 text-xs leading-relaxed text-muted">
-                左键点身体操作。拖拽捏软组织，姿势拉关节，击腹点击释放环状冲击，拳交拖动手臂沿大肠插入，刺刀先点腹壁再拖角度，滚轮控制深度。
+                左键点身体操作。拖拽捏软组织，姿势拉关节，击腹点击释放环状冲击，拳交拖动手臂沿大肠插入，刺刀点腹壁后拖角度与深度。
               </p>
               <div className="grid grid-cols-2 gap-2">
                 <button
@@ -627,9 +633,40 @@ export function Overlay() {
                 <div className="mt-3">
                   <p className="text-xs leading-relaxed text-muted">
                     {bayonetHasEntry
-                      ? "已锁定刺入点。拖动在垂直±30°锥内改变刺入角度，滚轮调节深度。贴上皮肤会先挤压，再刺入。"
-                      : "先点击腹壁选择刺入点，刺刀会垂直对准该点出现在体外。"}
+                      ? "已锁定刺入点。拖动同时改角度（垂直±30°）和深度。按住右键滚轮也可调深度。刀伤会保留到复位。"
+                      : "点击腹壁选择刺入点。刀伤会一直留着，直到点复位。"}
                   </p>
+                  <div className="mt-3 grid grid-cols-2 gap-2">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        useStudio.getState().setBayonetHasEntry(false);
+                        useStudio.getState().setBayonetPen(0);
+                      }}
+                      disabled={!bayonetHasEntry}
+                      className={cn(
+                        "inline-flex h-10 items-center justify-center gap-1.5 rounded-md border text-xs font-medium",
+                        bayonetHasEntry
+                          ? "border-border bg-surface-2 text-fg hover:text-fg"
+                          : "border-border bg-bg text-muted opacity-50",
+                      )}
+                    >
+                      <Repeat className="size-3.5" />
+                      再次刺入
+                    </button>
+                    <Toggle
+                      active={bayonetAuto}
+                      onClick={() => setBayonetAuto(!bayonetAuto)}
+                      icon={<Zap className="size-3.5" />}
+                      label="自动刺入"
+                    />
+                    <Toggle
+                      active={bayonetPump}
+                      onClick={() => setBayonetPump(!bayonetPump)}
+                      icon={<ChevronsUpDown className="size-3.5" />}
+                      label="抽插"
+                    />
+                  </div>
                   {bayonetHasEntry ? (
                     <label className="mt-3 block">
                       <span className="mb-1.5 flex items-center justify-between text-xs text-muted">
@@ -792,7 +829,7 @@ export function Overlay() {
           {panel === "weapons" ? (
             <div className="flex flex-col gap-3">
               <p className="text-xs leading-relaxed text-muted">
-                选择刺刀后，点击腹壁确定刺入点。拖动改变刺入角度（垂直±30°），滚轮或滑条控制深度。
+                点腹壁确定刺入点。拖动改角度和深度；按住右键时滚轮调深度。刀伤保留到复位。
               </p>
               <div className="grid grid-cols-3 gap-2">
                 <button
@@ -818,9 +855,46 @@ export function Overlay() {
                 ))}
               </div>
               {interactMode === "bayonet" ? (
-                <p className="text-xs text-muted">
-                  {bayonetHasEntry ? "刺入点已锁定。拖动改角度，滚轮调深度。" : "装备中 · 点击腹壁选择刺入点。"}
-                </p>
+                <div className="flex flex-col gap-2">
+                  <p className="text-xs text-muted">
+                    {bayonetHasEntry
+                      ? "刺入点已锁定。拖动改角度和深度。"
+                      : bayonetAuto
+                        ? "自动刺入已开：点腹壁后会垂直刺入，再等待下一次。"
+                        : "装备中 · 点击腹壁选择刺入点。"}
+                  </p>
+                  <div className="grid grid-cols-2 gap-2">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        useStudio.getState().setBayonetHasEntry(false);
+                        useStudio.getState().setBayonetPen(0);
+                      }}
+                      disabled={!bayonetHasEntry}
+                      className={cn(
+                        "inline-flex h-10 items-center justify-center gap-1.5 rounded-md border text-xs font-medium",
+                        bayonetHasEntry
+                          ? "border-border bg-surface-2 text-fg"
+                          : "border-border bg-bg text-muted opacity-50",
+                      )}
+                    >
+                      <Repeat className="size-3.5" />
+                      再次刺入
+                    </button>
+                    <Toggle
+                      active={bayonetAuto}
+                      onClick={() => setBayonetAuto(!bayonetAuto)}
+                      icon={<Zap className="size-3.5" />}
+                      label="自动刺入"
+                    />
+                    <Toggle
+                      active={bayonetPump}
+                      onClick={() => setBayonetPump(!bayonetPump)}
+                      icon={<ChevronsUpDown className="size-3.5" />}
+                      label="抽插"
+                    />
+                  </div>
+                </div>
               ) : (
                 <p className="text-xs text-muted">点击刺刀装备。</p>
               )}
@@ -844,7 +918,7 @@ export function Overlay() {
         </span>
         <span className="text-border">/</span>
         <Activity className="size-3.5" />
-        <span>右键旋转 · 左键点身体操作 · T 切换互动 · 刺刀滚轮调深度 · X 透视</span>
+        <span>右键旋转 · 左键点身体 · 按住右键滚轮调刺入深度 · T 切换互动 · X 透视</span>
       </div>
         </>
       )}

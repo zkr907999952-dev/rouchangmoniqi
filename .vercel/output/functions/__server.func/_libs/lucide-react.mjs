@@ -92,6 +92,19 @@ var Activity = createLucideIcon("activity", [["path", {
 * This source code is licensed under the ISC license.
 * See the LICENSE file in the root directory of this source tree.
 */
+var ChevronsUpDown = createLucideIcon("chevrons-up-down", [["path", {
+	d: "m7 15 5 5 5-5",
+	key: "1hf1tw"
+}], ["path", {
+	d: "m7 9 5-5 5 5",
+	key: "sgt6xg"
+}]]);
+/**
+* @license lucide-react v0.510.0 - ISC
+*
+* This source code is licensed under the ISC license.
+* See the LICENSE file in the root directory of this source tree.
+*/
 var Crosshair = createLucideIcon("crosshair", [
 	["circle", {
 		cx: "12",
@@ -316,6 +329,30 @@ var Pause = createLucideIcon("pause", [["rect", {
 * This source code is licensed under the ISC license.
 * See the LICENSE file in the root directory of this source tree.
 */
+var Repeat = createLucideIcon("repeat", [
+	["path", {
+		d: "m17 2 4 4-4 4",
+		key: "nntrym"
+	}],
+	["path", {
+		d: "M3 11v-1a4 4 0 0 1 4-4h14",
+		key: "84bu3i"
+	}],
+	["path", {
+		d: "m7 22-4-4 4-4",
+		key: "1wqhfi"
+	}],
+	["path", {
+		d: "M21 13v1a4 4 0 0 1-4 4H3",
+		key: "1rx37r"
+	}]
+]);
+/**
+* @license lucide-react v0.510.0 - ISC
+*
+* This source code is licensed under the ISC license.
+* See the LICENSE file in the root directory of this source tree.
+*/
 var RotateCcw = createLucideIcon("rotate-ccw", [["path", {
 	d: "M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8",
 	key: "1357e3"
@@ -482,4 +519,4 @@ var Zap = createLucideIcon("zap", [["path", {
 	key: "1xq2db"
 }]]);
 //#endregion
-export { EyeOff as _, Sword as a, RotateCw as c, MousePointerClick as d, Heart as f, Eye as g, Grab as h, TriangleAlert as i, RotateCcw as l, Grid3x3 as m, Wrench as n, Settings2 as o, Hand as p, Wind as r, Scan as s, Zap as t, Pause as u, Crosshair as v, Activity as y };
+export { Eye as _, Sword as a, ChevronsUpDown as b, RotateCw as c, Pause as d, MousePointerClick as f, Grab as g, Grid3x3 as h, TriangleAlert as i, RotateCcw as l, Hand as m, Wrench as n, Settings2 as o, Heart as p, Wind as r, Scan as s, Zap as t, Repeat as u, EyeOff as v, Activity as x, Crosshair as y };

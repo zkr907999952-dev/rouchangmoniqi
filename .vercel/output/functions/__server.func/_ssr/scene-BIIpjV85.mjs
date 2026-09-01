@@ -2,8 +2,8 @@ import { i as __toESM } from "../_runtime.mjs";
 import { a as require_jsx_runtime, o as require_react } from "../_libs/@radix-ui/react-collection+[...].mjs";
 import { B as MathUtils, Ct as Vector2, H as Mesh, K as MeshStandardMaterial, R as MOUSE, U as MeshBasicMaterial, V as Matrix4, W as MeshLambertMaterial, _ as Euler, _t as SphereGeometry, bt as TOUCH, d as BufferGeometry, dt as RingGeometry, f as CanvasTexture, ft as SRGBColorSpace, g as DynamicDrawUsage, i as useThree, j as LineSegments, k as LineBasicMaterial, l as Box3, lt as Ray, m as Color, n as Canvas, nt as PlaneGeometry, p as ClampToEdgeWrapping, r as useFrame, rt as PointLight, st as Quaternion, t as OrbitControls, tt as Plane, u as BufferAttribute, vt as Spherical, wt as Vector3, y as Group } from "../_libs/@react-three/drei+[...].mjs";
 import { n as SkeletonUtils } from "../_libs/three-stdlib.mjs";
-import { n as useStudio, r as SoftSkeleton } from "./routes-Ni9NaLPO.mjs";
-//#region node_modules/.nitro/vite/services/ssr/assets/scene-Bmos2aQN.js
+import { n as useStudio, r as SoftSkeleton } from "./routes-sGGLMNXm.mjs";
+//#region node_modules/.nitro/vite/services/ssr/assets/scene-BIIpjV85.js
 var import_react = /* @__PURE__ */ __toESM(require_react());
 var import_jsx_runtime = require_jsx_runtime();
 function addEdge(adj, slot, a, b, len) {
@@ -1087,6 +1087,10 @@ var _side = new Vector3();
 var _q = new Quaternion();
 var _axisY = new Vector3(0, 1, 0);
 var _look = new Vector3();
+var _down = new Vector3(0, -1, 0);
+var _xA = new Vector3();
+var _zA = new Vector3();
+var _mat = new Matrix4();
 var BLADE_LEN = .248;
 var HOVER = .075;
 var SQUEEZE_MAX = .013;
@@ -1111,11 +1115,16 @@ var BayonetPlay = class {
 	handle = new Vector3();
 	tip = new Vector3();
 	dir = new Vector3(0, 0, -1);
+	edgeWorld = new Vector3(0, -1, 0);
 	tubes = [];
 	knife = null;
 	marker = null;
 	woundTex = null;
 	hitAcc = 0;
+	autoPhase = "idle";
+	holdT = 0;
+	pumpT = 0;
+	autoReleased = false;
 	attach(src, tubes) {
 		this.root.clear();
 		this.wounds.clear();
@@ -1178,6 +1187,10 @@ var BayonetPlay = class {
 		this.penetration = 0;
 		this.rawPen = -.075;
 		this.hitAcc = 0;
+		this.autoPhase = "idle";
+		this.holdT = 0;
+		this.pumpT = 0;
+		this.autoReleased = false;
 		this.entry.copy(point);
 		this.entryNormal.copy(normal).normalize();
 		if (this.entryNormal.lengthSq() < 1e-6) this.entryNormal.set(0, 0, 1);
@@ -1189,15 +1202,47 @@ var BayonetPlay = class {
 		this.updateContact();
 		this.root.visible = this.enabled;
 	}
+	beginAuto() {
+		if (!this.hasEntry) return;
+		this.autoPhase = "in";
+		this.holdT = 0;
+		this.autoReleased = false;
+	}
+	releaseEntry() {
+		this.hasEntry = false;
+		this.punctured = false;
+		this.punctureEvent = false;
+		this.squeeze = 0;
+		this.penetration = 0;
+		this.rawPen = -.075;
+		this.hitAcc = 0;
+		this.autoPhase = "idle";
+		this.root.visible = false;
+		if (this.marker) this.marker.visible = false;
+	}
+	get isAuto() {
+		return this.autoPhase !== "idle";
+	}
 	dragTo(to) {
 		if (!this.enabled || !this.hasEntry) return;
+		this.autoPhase = "idle";
 		_v.copy(this.entry).sub(to);
-		if (_v.lengthSq() < 1e-8) return;
+		const len = _v.length();
+		if (len < 1e-5) return;
 		_v.normalize();
 		clampDirToCone(_v, this.restAxis, MAX_CONE);
 		this.dir.copy(_v);
-		const dist = this.bladeLen - this.rawPen;
-		this.handle.copy(this.entry).addScaledVector(this.dir, -dist);
+		const intended = this.bladeLen - len;
+		if (!this.punctured && intended >= SQUEEZE_MAX * .92) {
+			this.punctured = true;
+			this.punctureEvent = true;
+			this.spawnWound();
+		}
+		const maxPen = this.punctured ? MAX_PEN : SQUEEZE_MAX;
+		const minDist = Math.max(.04, this.bladeLen - maxPen);
+		const maxDist = this.bladeLen + HOVER + .08;
+		const d = MathUtils.clamp(len, minDist, maxDist);
+		this.handle.copy(this.entry).addScaledVector(this.dir, -d);
 		this.layout();
 		this.updateContact();
 	}
@@ -1226,15 +1271,9 @@ var BayonetPlay = class {
 		if (!on) this.hitAcc = 0;
 	}
 	reset() {
-		this.hasEntry = false;
-		this.punctured = false;
-		this.punctureEvent = false;
-		this.squeeze = 0;
-		this.penetration = 0;
-		this.rawPen = -.075;
-		this.hitAcc = 0;
-		this.root.visible = false;
-		if (this.marker) this.marker.visible = false;
+		this.releaseEntry();
+		this.autoReleased = false;
+		this.pumpT = 0;
 		while (this.wounds.children.length) {
 			const ch = this.wounds.children[0];
 			this.wounds.remove(ch);
@@ -1243,6 +1282,11 @@ var BayonetPlay = class {
 			const mat = mesh.material;
 			if (mat && !Array.isArray(mat)) mat.dispose();
 		}
+	}
+	consumeAutoReleased() {
+		if (!this.autoReleased) return false;
+		this.autoReleased = false;
+		return true;
 	}
 	consumePunctureEvent() {
 		if (!this.punctureEvent) return false;
@@ -1263,8 +1307,36 @@ var BayonetPlay = class {
 			radius: this.punctured ? .055 : .07
 		};
 	}
-	apply(dt, gut, health) {
-		if (!this.enabled || !this.hasEntry) return;
+	apply(dt, gut, health, opts) {
+		if (!this.enabled) return;
+		const grabbing = opts?.grabbing ?? false;
+		const pump = opts?.pump ?? false;
+		if (this.hasEntry && !grabbing) {
+			if (pump) {
+				this.autoPhase = "idle";
+				this.pumpT += dt * 2.35;
+				const u = .5 - .5 * Math.cos(this.pumpT);
+				this.setPen01(.16 + .8 * u);
+			} else if (this.autoPhase === "in") {
+				const t = Math.min(1, this.pen01() + dt * 1.7);
+				this.setPen01(t);
+				if (t >= .94) {
+					this.autoPhase = "hold";
+					this.holdT = 0;
+				}
+			} else if (this.autoPhase === "hold") {
+				this.holdT += dt;
+				if (this.holdT > .16) this.autoPhase = "out";
+			} else if (this.autoPhase === "out") {
+				const t = Math.max(0, this.pen01() - dt * 1.5);
+				this.setPen01(t);
+				if (t <= .02) {
+					this.releaseEntry();
+					this.autoReleased = true;
+				}
+			}
+		}
+		if (!this.hasEntry) return;
 		this.updateContact();
 		this.layout();
 		if (this.punctured && this.penetration > .012) {
@@ -1291,8 +1363,7 @@ var BayonetPlay = class {
 		this.tip.copy(this.handle).addScaledVector(this.dir, this.bladeLen);
 		if (this.knife) {
 			this.knife.position.copy(this.handle);
-			_q.setFromUnitVectors(_axisY, this.dir);
-			this.knife.quaternion.copy(_q);
+			this.orientBladeDown();
 		}
 		if (this.marker) {
 			this.marker.visible = this.hasEntry && !this.punctured;
@@ -1302,12 +1373,28 @@ var BayonetPlay = class {
 		}
 		this.layoutWounds();
 	}
+	orientBladeDown() {
+		if (!this.knife) return;
+		_xA.crossVectors(this.dir, _down);
+		if (_xA.lengthSq() < 1e-8) _xA.set(1, 0, 0);
+		else _xA.normalize();
+		_zA.crossVectors(_xA, this.dir).normalize();
+		if (_zA.y > 0) {
+			_xA.negate();
+			_zA.negate();
+		}
+		this.edgeWorld.copy(_zA);
+		_mat.makeBasis(_xA, this.dir, _zA);
+		this.knife.quaternion.setFromRotationMatrix(_mat);
+	}
 	layoutWounds() {
-		const dent = this.punctured ? Math.min(this.penetration * .06, .0025) : 0;
 		for (const obj of this.wounds.children) {
 			const mesh = obj;
-			mesh.position.copy(this.entry).addScaledVector(this.dir, dent).addScaledVector(this.entryNormal, .0016);
-			_look.copy(mesh.position).add(this.entryNormal);
+			const entry = mesh.userData.entry;
+			const normal = mesh.userData.normal;
+			if (!entry || !normal) continue;
+			mesh.position.copy(entry).addScaledVector(normal, .0016);
+			_look.copy(mesh.position).add(normal);
 			mesh.lookAt(_look);
 			mesh.rotateZ(mesh.userData.twist ?? 0);
 		}
@@ -1339,6 +1426,9 @@ var BayonetPlay = class {
 		});
 		const mesh = new Mesh(geo, mat);
 		mesh.userData.twist = (Math.random() - .5) * .55;
+		mesh.userData.entry = this.entry.clone();
+		mesh.userData.normal = this.entryNormal.clone();
+		mesh.userData.dir = this.dir.clone();
 		mesh.frustumCulled = false;
 		mesh.renderOrder = 18;
 		mesh.raycast = () => {};
@@ -2507,6 +2597,7 @@ function FittedFigure({ character, intestines, pelvis, arm, bayonet, controlsRef
 	const lastAz = (0, import_react.useRef)(null);
 	const lastPol = (0, import_react.useRef)(null);
 	const bayonetPenRef = (0, import_react.useRef)(0);
+	const rmbDown = (0, import_react.useRef)(false);
 	const { camera, gl, raycaster, pointer } = useThree();
 	const setup = (0, import_react.useMemo)(() => {
 		const xrayList = [];
@@ -2774,8 +2865,15 @@ function FittedFigure({ character, intestines, pelvis, arm, bayonet, controlsRef
 	}, []);
 	(0, import_react.useEffect)(() => {
 		const el = gl.domElement;
+		const onPointerDown = (e) => {
+			if (e.button === 2) rmbDown.current = true;
+		};
+		const onPointerUp = (e) => {
+			if (e.button === 2) rmbDown.current = false;
+		};
 		const onWheel = (e) => {
 			const s = useStudio.getState();
+			if (!rmbDown.current) return;
 			if (s.interactMode !== "bayonet" || !setup.knife.hasEntry) return;
 			e.preventDefault();
 			e.stopPropagation();
@@ -2784,11 +2882,19 @@ function FittedFigure({ character, intestines, pelvis, arm, bayonet, controlsRef
 			bayonetPenRef.current = next;
 			s.setBayonetPen(next);
 		};
+		el.addEventListener("pointerdown", onPointerDown);
+		window.addEventListener("pointerup", onPointerUp);
+		window.addEventListener("pointercancel", onPointerUp);
 		el.addEventListener("wheel", onWheel, {
 			passive: false,
 			capture: true
 		});
-		return () => el.removeEventListener("wheel", onWheel, true);
+		return () => {
+			el.removeEventListener("pointerdown", onPointerDown);
+			window.removeEventListener("pointerup", onPointerUp);
+			window.removeEventListener("pointercancel", onPointerUp);
+			el.removeEventListener("wheel", onWheel, true);
+		};
 	}, [gl, setup]);
 	(0, import_react.useEffect)(() => {
 		if (controlsRef.current) {
@@ -2890,6 +2996,9 @@ function FittedFigure({ character, intestines, pelvis, arm, bayonet, controlsRef
 						setup.knife.dragTo(_target);
 						grab.current.origin.copy(setup.knife.handle);
 						grab.current.planePoint.copy(setup.knife.handle);
+						const t = setup.knife.pen01();
+						bayonetPenRef.current = t;
+						s.setBayonetPen(t);
 					}
 				} else if (grab.current.mode === "pose") setup.skeleton.setPoseDrag(bone, o.x, o.y, o.z, _target.x, _target.y, _target.z);
 				else setup.skeleton.setTissueDrag(o.x, o.y, o.z, _target.x, _target.y, _target.z, .16);
@@ -2902,8 +3011,11 @@ function FittedFigure({ character, intestines, pelvis, arm, bayonet, controlsRef
 		setup.fist.setEnabled(s.interactMode === "fist");
 		setup.fist.setMaxScale(s.fistMaxDepth);
 		setup.knife.setEnabled(s.interactMode === "bayonet");
-		if (controlsRef.current) controlsRef.current.enableZoom = !(s.interactMode === "bayonet" && setup.knife.hasEntry);
-		if (s.interactMode === "bayonet" && setup.knife.hasEntry) {
+		if (controlsRef.current) controlsRef.current.enableZoom = !(rmbDown.current && s.interactMode === "bayonet" && setup.knife.hasEntry);
+		if (!s.bayonetHasEntry && setup.knife.hasEntry) setup.knife.releaseEntry();
+		const grabbingKnife = grab.current?.mode === "bayonet";
+		const animating = s.bayonetPump || setup.knife.isAuto;
+		if (s.interactMode === "bayonet" && setup.knife.hasEntry && !grabbingKnife && !animating) {
 			if (Math.abs(s.bayonetPen - bayonetPenRef.current) > 1e-4) {
 				bayonetPenRef.current = s.bayonetPen;
 				setup.knife.setPen01(s.bayonetPen);
@@ -2958,7 +3070,23 @@ function FittedFigure({ character, intestines, pelvis, arm, bayonet, controlsRef
 		setup.strike.step(dt);
 		setup.strike.apply(s.strikeRebound);
 		setup.fist.apply(s.fistGut, autoFist);
-		setup.knife.apply(dt, s.fistGut, setup.gutHealth);
+		setup.knife.apply(dt, s.fistGut, setup.gutHealth, {
+			pump: s.bayonetPump,
+			grabbing: grabbingKnife
+		});
+		if (setup.knife.consumeAutoReleased()) {
+			bayonetPenRef.current = 0;
+			useStudio.setState({
+				bayonetHasEntry: false,
+				bayonetPen: 0
+			});
+		} else if ((s.bayonetPump || setup.knife.isAuto) && setup.knife.hasEntry) {
+			const t = setup.knife.pen01();
+			if (Math.abs(t - s.bayonetPen) > .012) {
+				bayonetPenRef.current = t;
+				s.setBayonetPen(t);
+			}
+		}
 		if (setup.knife.consumePunctureEvent()) {
 			const e = setup.knife.entry;
 			const ddir = setup.knife.dir;
@@ -3068,7 +3196,38 @@ function FittedFigure({ character, intestines, pelvis, arm, bayonet, controlsRef
 					penetration: setup.knife.penetration,
 					rawPen: setup.knife.rawPen,
 					enabled: setup.knife.enabled,
-					storePen: t
+					storePen: t,
+					wounds: setup.knife.wounds.children.length
+				};
+			};
+			vela.pickBayonet = (dx, dy, dz) => {
+				const p = setup.navel.clone().add(new Vector3(dx, dy, dz));
+				setup.knife.setEnabled(true);
+				setup.knife.pick(p, new Vector3(0, 0, 1));
+				bayonetPenRef.current = 0;
+				useStudio.setState({
+					interactMode: "bayonet",
+					bayonetHasEntry: true,
+					bayonetPen: 0,
+					showOrgans: true,
+					abdomenXray: Math.max(.38, useStudio.getState().abdomenXray),
+					showGutHp: true
+				});
+				return {
+					entry: setup.knife.entry.toArray(),
+					wounds: setup.knife.wounds.children.length
+				};
+			};
+			vela.nextStab = () => {
+				setup.knife.releaseEntry();
+				bayonetPenRef.current = 0;
+				useStudio.setState({
+					bayonetHasEntry: false,
+					bayonetPen: 0
+				});
+				return {
+					wounds: setup.knife.wounds.children.length,
+					hasEntry: setup.knife.hasEntry
 				};
 			};
 			if (energyTick.current % 2 === 0) {
@@ -3085,9 +3244,11 @@ function FittedFigure({ character, intestines, pelvis, arm, bayonet, controlsRef
 					handle: setup.knife.handle.toArray(),
 					dir: setup.knife.dir.toArray(),
 					restAxis: setup.knife.restAxis.toArray(),
+					edge: setup.knife.edgeWorld.toArray(),
 					cone: 30,
 					wounds: setup.knife.wounds.children.length,
 					wound0: setup.knife.wounds.children[0] ? setup.knife.wounds.children[0].position.toArray() : null,
+					wound1: setup.knife.wounds.children[1] ? setup.knife.wounds.children[1].position.toArray() : null,
 					minHp: +minHp.toFixed(3)
 				};
 			}
@@ -3150,8 +3311,10 @@ function FittedFigure({ character, intestines, pelvis, arm, bayonet, controlsRef
 				if (_normal.dot(_camDir) > 0) _normal.negate();
 				setup.knife.pick(_hit, _normal);
 				bayonetPenRef.current = 0;
-				useStudio.getState().setBayonetHasEntry(true);
-				useStudio.getState().setBayonetPen(0);
+				const st = useStudio.getState();
+				st.setBayonetHasEntry(true);
+				st.setBayonetPen(0);
+				if (st.bayonetAuto && !st.bayonetPump) setup.knife.beginAuto();
 				if (pokeRef.current) {
 					pokeRef.current.position.copy(_hit);
 					pokeRef.current.visible = true;
