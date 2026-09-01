@@ -8,6 +8,10 @@ const _side = new THREE.Vector3();
 const _q = new THREE.Quaternion();
 const _axisY = new THREE.Vector3(0, 1, 0);
 const _look = new THREE.Vector3();
+const _down = new THREE.Vector3(0, -1, 0);
+const _xA = new THREE.Vector3();
+const _zA = new THREE.Vector3();
+const _mat = new THREE.Matrix4();
 
 const BLADE_LEN = 0.248;
 const HOVER = 0.075;
@@ -39,6 +43,10 @@ export class BayonetPlay {
   private marker: THREE.Mesh | null = null;
   private woundTex: THREE.CanvasTexture | null = null;
   private hitAcc = 0;
+  private autoPhase: "idle" | "in" | "hold" | "out" = "idle";
+  private holdT = 0;
+  private pumpT = 0;
+  autoReleased = false;
 
   attach(src: THREE.Object3D, tubes: TubeAlong[]) {
     this.root.clear();
@@ -106,6 +114,10 @@ export class BayonetPlay {
     this.penetration = 0;
     this.rawPen = -HOVER;
     this.hitAcc = 0;
+    this.autoPhase = "idle";
+    this.holdT = 0;
+    this.pumpT = 0;
+    this.autoReleased = false;
     this.entry.copy(point);
     this.entryNormal.copy(normal).normalize();
     if (this.entryNormal.lengthSq() < 1e-6) this.entryNormal.set(0, 0, 1);
@@ -118,15 +130,50 @@ export class BayonetPlay {
     this.root.visible = this.enabled;
   }
 
+  beginAuto() {
+    if (!this.hasEntry) return;
+    this.autoPhase = "in";
+    this.holdT = 0;
+    this.autoReleased = false;
+  }
+
+  releaseEntry() {
+    this.hasEntry = false;
+    this.punctured = false;
+    this.punctureEvent = false;
+    this.squeeze = 0;
+    this.penetration = 0;
+    this.rawPen = -HOVER;
+    this.hitAcc = 0;
+    this.autoPhase = "idle";
+    this.root.visible = false;
+    if (this.marker) this.marker.visible = false;
+  }
+
+  get isAuto() {
+    return this.autoPhase !== "idle";
+  }
+
   dragTo(to: THREE.Vector3) {
     if (!this.enabled || !this.hasEntry) return;
+    this.autoPhase = "idle";
     _v.copy(this.entry).sub(to);
-    if (_v.lengthSq() < 1e-8) return;
+    const len = _v.length();
+    if (len < 1e-5) return;
     _v.normalize();
     clampDirToCone(_v, this.restAxis, MAX_CONE);
     this.dir.copy(_v);
-    const dist = this.bladeLen - this.rawPen;
-    this.handle.copy(this.entry).addScaledVector(this.dir, -dist);
+    const intended = this.bladeLen - len;
+    if (!this.punctured && intended >= SQUEEZE_MAX * 0.92) {
+      this.punctured = true;
+      this.punctureEvent = true;
+      this.spawnWound();
+    }
+    const maxPen = this.punctured ? MAX_PEN : SQUEEZE_MAX;
+    const minDist = Math.max(0.04, this.bladeLen - maxPen);
+    const maxDist = this.bladeLen + HOVER + 0.08;
+    const d = THREE.MathUtils.clamp(len, minDist, maxDist);
+    this.handle.copy(this.entry).addScaledVector(this.dir, -d);
     this.layout();
     this.updateContact();
   }
@@ -163,15 +210,9 @@ export class BayonetPlay {
   }
 
   reset() {
-    this.hasEntry = false;
-    this.punctured = false;
-    this.punctureEvent = false;
-    this.squeeze = 0;
-    this.penetration = 0;
-    this.rawPen = -HOVER;
-    this.hitAcc = 0;
-    this.root.visible = false;
-    if (this.marker) this.marker.visible = false;
+    this.releaseEntry();
+    this.autoReleased = false;
+    this.pumpT = 0;
     while (this.wounds.children.length) {
       const ch = this.wounds.children[0]!;
       this.wounds.remove(ch);
@@ -182,6 +223,12 @@ export class BayonetPlay {
         (mat as THREE.Material).dispose();
       }
     }
+  }
+
+  consumeAutoReleased() {
+    if (!this.autoReleased) return false;
+    this.autoReleased = false;
+    return true;
   }
 
   consumePunctureEvent() {
@@ -207,8 +254,36 @@ export class BayonetPlay {
     };
   }
 
-  apply(dt: number, gut: number, health: GutHealth) {
-    if (!this.enabled || !this.hasEntry) return;
+  apply(dt: number, gut: number, health: GutHealth, opts?: { auto?: boolean; pump?: boolean; grabbing?: boolean }) {
+    if (!this.enabled) return;
+    const grabbing = opts?.grabbing ?? false;
+    const pump = opts?.pump ?? false;
+    if (this.hasEntry && !grabbing) {
+      if (pump) {
+        this.autoPhase = "idle";
+        this.pumpT += dt * 2.35;
+        const u = 0.5 - 0.5 * Math.cos(this.pumpT);
+        this.setPen01(0.16 + 0.8 * u);
+      } else if (this.autoPhase === "in") {
+        const t = Math.min(1, this.pen01() + dt * 1.7);
+        this.setPen01(t);
+        if (t >= 0.94) {
+          this.autoPhase = "hold";
+          this.holdT = 0;
+        }
+      } else if (this.autoPhase === "hold") {
+        this.holdT += dt;
+        if (this.holdT > 0.16) this.autoPhase = "out";
+      } else if (this.autoPhase === "out") {
+        const t = Math.max(0, this.pen01() - dt * 1.5);
+        this.setPen01(t);
+        if (t <= 0.02) {
+          this.releaseEntry();
+          this.autoReleased = true;
+        }
+      }
+    }
+    if (!this.hasEntry) return;
     this.updateContact();
     this.layout();
     if (this.punctured && this.penetration > 0.012) {
@@ -237,8 +312,7 @@ export class BayonetPlay {
     this.tip.copy(this.handle).addScaledVector(this.dir, this.bladeLen);
     if (this.knife) {
       this.knife.position.copy(this.handle);
-      _q.setFromUnitVectors(_axisY, this.dir);
-      this.knife.quaternion.copy(_q);
+      this.orientBladeDown();
     }
     if (this.marker) {
       this.marker.visible = this.hasEntry && !this.punctured;
@@ -249,12 +323,28 @@ export class BayonetPlay {
     this.layoutWounds();
   }
 
+  private orientBladeDown() {
+    if (!this.knife) return;
+    _xA.crossVectors(this.dir, _down);
+    if (_xA.lengthSq() < 1e-8) _xA.set(1, 0, 0);
+    else _xA.normalize();
+    _zA.crossVectors(_xA, this.dir).normalize();
+    if (_zA.y > 0) {
+      _xA.negate();
+      _zA.negate();
+    }
+    _mat.makeBasis(_xA, this.dir, _zA);
+    this.knife.quaternion.setFromRotationMatrix(_mat);
+  }
+
   private layoutWounds() {
-    const dent = this.punctured ? Math.min(this.penetration * 0.06, 0.0025) : 0;
     for (const obj of this.wounds.children) {
       const mesh = obj as THREE.Mesh;
-      mesh.position.copy(this.entry).addScaledVector(this.dir, dent).addScaledVector(this.entryNormal, 0.0016);
-      _look.copy(mesh.position).add(this.entryNormal);
+      const entry = mesh.userData.entry as THREE.Vector3 | undefined;
+      const normal = mesh.userData.normal as THREE.Vector3 | undefined;
+      if (!entry || !normal) continue;
+      mesh.position.copy(entry).addScaledVector(normal, 0.0016);
+      _look.copy(mesh.position).add(normal);
       mesh.lookAt(_look);
       mesh.rotateZ((mesh.userData.twist as number) ?? 0);
     }
