@@ -19,6 +19,7 @@ export function StudioApp() {
             pelvis={scenes.pelvis}
             arm={scenes.arm}
             bayonet={scenes.bayonet}
+            bayonetLong={scenes.bayonetLong}
             room={scenes.room}
           />
         </Suspense>

@@ -3,9 +3,9 @@ import { chromium } from "playwright";
 const browser = await chromium.launch({ args: ["--no-sandbox"] });
 const page = await browser.newPage({ viewport: { width: 1280, height: 800 } });
 page.setDefaultTimeout(120000);
-page.on("pageerror", (e) => console.log("PAGEERROR", e.message.slice(0, 300)));
+page.on("pageerror", (e) => console.log("PAGEERROR", e.message.slice(0, 400)));
 
-await page.goto(`http://127.0.0.1:8080/?b=${Date.now()}`, { waitUntil: "domcontentloaded", timeout: 60000 });
+await page.goto(`http://127.0.0.1:8080/?w=${Date.now()}`, { waitUntil: "domcontentloaded", timeout: 60000 });
 let ready = false;
 for (let i = 0; i < 90; i++) {
   const txt = await page.locator("body").innerText();
@@ -20,42 +20,32 @@ for (let i = 0; i < 90; i++) {
 }
 console.log("READY", ready);
 
-const hover = await page.evaluate(() => {
+const deep = await page.evaluate(() => {
   const v = window.__vela;
-  if (!v?.driveBayonet) return { err: "no drive" };
-  const r = v.driveBayonet(0);
+  v.setBayonetKind?.("short");
+  const r = v.driveBayonet?.(0.14);
   v.frameBelly?.();
   return r;
 });
-console.log("HOVER", JSON.stringify(hover));
-await page.waitForTimeout(400);
-await page.screenshot({ path: "/workspace/screenshots/bayonet-hover.png" });
-
-const mid = await page.evaluate(() => window.__vela?.driveBayonet(0.1));
-console.log("MID", JSON.stringify(mid));
-await page.waitForTimeout(500);
-const dump1 = await page.evaluate(() => window.__vela?.bayonet);
-console.log("DUMP_MID", JSON.stringify(dump1));
-await page.screenshot({ path: "/workspace/screenshots/bayonet-mid.png" });
-
-const next = await page.evaluate(() => window.__vela?.nextStab?.());
-console.log("NEXT", JSON.stringify(next));
-const second = await page.evaluate(() => {
-  const v = window.__vela;
-  v.pickBayonet?.(0.03, -0.04, 0);
-  return v.driveBayonet?.(0.12);
-});
-console.log("SECOND", JSON.stringify(second));
-await page.waitForTimeout(500);
-const dump2 = await page.evaluate(() => window.__vela?.bayonet);
-console.log("TWO_WOUNDS", JSON.stringify(dump2));
+console.log("DEEP", JSON.stringify(deep));
+await page.waitForTimeout(600);
+const dump = await page.evaluate(() => window.__vela?.bayonet);
+console.log("DUMP", JSON.stringify(dump));
 await page.screenshot({ path: "/workspace/screenshots/bayonet-wounds.png" });
 
-const auto = await page.evaluate(() => {
+const xray = await page.evaluate(() => {
   const v = window.__vela;
-  v.nextStab?.();
-  return { wounds: v.bayonet?.wounds };
+  // raise xray via store if possible
+  return v.bayonet;
 });
-console.log("KEEP", JSON.stringify(auto));
+console.log("XRAY", JSON.stringify(xray));
+
+await page.getByText("腹部半透明", { exact: false }).first().isVisible().catch(() => false);
+await page.evaluate(() => {
+  const st = window.__vela;
+  st.driveBayonet?.(0.14);
+});
+await page.waitForTimeout(300);
+await page.screenshot({ path: "/workspace/screenshots/bayonet-stab.png" });
 
 await browser.close();

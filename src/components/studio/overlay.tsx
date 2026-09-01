@@ -116,9 +116,11 @@ export function Overlay() {
   const bayonetPen = useStudio((s) => s.bayonetPen);
   const bayonetAuto = useStudio((s) => s.bayonetAuto);
   const bayonetPump = useStudio((s) => s.bayonetPump);
+  const bayonetKind = useStudio((s) => s.bayonetKind);
   const setBayonetPen = useStudio((s) => s.setBayonetPen);
   const setBayonetAuto = useStudio((s) => s.setBayonetAuto);
   const setBayonetPump = useStudio((s) => s.setBayonetPump);
+  const setBayonetKind = useStudio((s) => s.setBayonetKind);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -487,16 +489,29 @@ export function Overlay() {
                 </button>
                 <button
                   type="button"
-                  onClick={() => setInteractMode("bayonet")}
+                  onClick={() => setBayonetKind("short")}
                   className={cn(
-                    "col-span-2 inline-flex h-11 items-center justify-center gap-1.5 rounded-md text-sm font-medium transition-colors duration-fast",
-                    interactMode === "bayonet"
+                    "inline-flex h-11 items-center justify-center gap-1.5 rounded-md text-sm font-medium transition-colors duration-fast",
+                    interactMode === "bayonet" && bayonetKind === "short"
                       ? "bg-accent text-accent-fg"
                       : "border border-border bg-surface-2 text-muted hover:text-fg",
                   )}
                 >
                   <Sword className="size-4" />
                   刺刀
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setBayonetKind("long")}
+                  className={cn(
+                    "inline-flex h-11 items-center justify-center gap-1.5 rounded-md text-sm font-medium transition-colors duration-fast",
+                    interactMode === "bayonet" && bayonetKind === "long"
+                      ? "bg-accent text-accent-fg"
+                      : "border border-border bg-surface-2 text-muted hover:text-fg",
+                  )}
+                >
+                  <Sword className="size-4" />
+                  长刺刀
                 </button>
               </div>
 
@@ -633,7 +648,7 @@ export function Overlay() {
                 <div className="mt-3">
                   <p className="text-xs leading-relaxed text-muted">
                     {bayonetHasEntry
-                      ? "已锁定刺入点。拖动同时改角度（垂直±30°）和深度。按住右键滚轮也可调深度。刀伤会保留到复位。"
+                      ? `${bayonetKind === "long" ? "长刺刀" : "刺刀"}已锁定刺入点。拖动改角度和深度。刀刃可全部没入，刀柄停在体外。`
                       : "点击腹壁选择刺入点。刀伤会一直留着，直到点复位。"}
                   </p>
                   <div className="mt-3 grid grid-cols-2 gap-2">
@@ -834,10 +849,10 @@ export function Overlay() {
               <div className="grid grid-cols-3 gap-2">
                 <button
                   type="button"
-                  onClick={() => setInteractMode(interactMode === "bayonet" ? "drag" : "bayonet")}
+                  onClick={() => setBayonetKind("short")}
                   className={cn(
                     "flex aspect-square flex-col items-center justify-center gap-1 rounded-md border text-[11px] font-medium",
-                    interactMode === "bayonet"
+                    interactMode === "bayonet" && bayonetKind === "short"
                       ? "border-accent bg-accent text-accent-fg"
                       : "border-border bg-surface-2 text-muted hover:text-fg",
                   )}
@@ -845,7 +860,20 @@ export function Overlay() {
                   <Sword className="size-5" />
                   刺刀
                 </button>
-                {Array.from({ length: 5 }, (_, i) => (
+                <button
+                  type="button"
+                  onClick={() => setBayonetKind("long")}
+                  className={cn(
+                    "flex aspect-square flex-col items-center justify-center gap-1 rounded-md border text-[11px] font-medium",
+                    interactMode === "bayonet" && bayonetKind === "long"
+                      ? "border-accent bg-accent text-accent-fg"
+                      : "border-border bg-surface-2 text-muted hover:text-fg",
+                  )}
+                >
+                  <Sword className="size-5" />
+                  长刺刀
+                </button>
+                {Array.from({ length: 4 }, (_, i) => (
                   <div
                     key={i}
                     className="flex aspect-square items-center justify-center rounded-md border border-dashed border-border bg-surface-2/50 text-muted"
@@ -858,7 +886,7 @@ export function Overlay() {
                 <div className="flex flex-col gap-2">
                   <p className="text-xs text-muted">
                     {bayonetHasEntry
-                      ? "刺入点已锁定。拖动改角度和深度。"
+                      ? `${bayonetKind === "long" ? "长刺刀" : "刺刀"}刺入点已锁定。刀刃可全部没入，刀柄停在体外。`
                       : bayonetAuto
                         ? "自动刺入已开：点腹壁后会垂直刺入，再等待下一次。"
                         : "装备中 · 点击腹壁选择刺入点。"}
@@ -913,7 +941,9 @@ export function Overlay() {
               : interactMode === "fist"
                 ? "拳交"
                 : interactMode === "bayonet"
-                  ? "刺刀"
+                  ? bayonetKind === "long"
+                    ? "长刺刀"
+                    : "刺刀"
                   : "拖拽"}
         </span>
         <span className="text-border">/</span>

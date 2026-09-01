@@ -34,6 +34,7 @@ type FigureProps = {
   pelvis: THREE.Object3D;
   arm: THREE.Object3D;
   bayonet: THREE.Object3D;
+  bayonetLong: THREE.Object3D;
 };
 
 function meshKey(mesh: THREE.Object3D) {
@@ -1036,7 +1037,7 @@ function attachXray(
   return overlay;
 }
 
-export function Figure({ controlsRef, character, intestines, pelvis, arm, bayonet }: FigureProps) {
+export function Figure({ controlsRef, character, intestines, pelvis, arm, bayonet, bayonetLong }: FigureProps) {
   return (
     <FittedFigure
       character={character}
@@ -1044,6 +1045,7 @@ export function Figure({ controlsRef, character, intestines, pelvis, arm, bayone
       pelvis={pelvis}
       arm={arm}
       bayonet={bayonet}
+      bayonetLong={bayonetLong}
       controlsRef={controlsRef}
     />
   );
@@ -1055,6 +1057,7 @@ function FittedFigure({
   pelvis,
   arm,
   bayonet,
+  bayonetLong,
   controlsRef,
 }: {
   character: THREE.Object3D;
@@ -1062,6 +1065,7 @@ function FittedFigure({
   pelvis: THREE.Object3D;
   arm: THREE.Object3D;
   bayonet: THREE.Object3D;
+  bayonetLong: THREE.Object3D;
   controlsRef: RefObject<OrbitControlsImpl | null>;
 }) {
   const pokeRef = useRef<THREE.Mesh>(null);
@@ -1217,7 +1221,8 @@ function FittedFigure({
     fist.setMid(navel);
     root.add(fist.root);
     const knife = new BayonetPlay();
-    knife.attach(bayonet, peristalsis.getTubes());
+    knife.attach(bayonet, peristalsis.getTubes(), bayonetLong);
+    knife.setSkin(torsoMeshes, { y0: yX0, y1: yX1, xMax: 0.12, zFront: skinZ - 0.01 });
     root.add(knife.root);
     root.add(knife.wounds);
     pelvic.traverse((obj) => {
@@ -1313,7 +1318,7 @@ function FittedFigure({
       boneLines,
       jointBuf,
     };
-  }, [character, intestines, pelvis, arm, bayonet]);
+  }, [character, intestines, pelvis, arm, bayonet, bayonetLong]);
 
   useEffect(() => {
     const id = requestAnimationFrame(() => {
@@ -1485,6 +1490,8 @@ function FittedFigure({
     setup.fist.setEnabled(s.interactMode === "fist");
     setup.fist.setMaxScale(s.fistMaxDepth);
     setup.knife.setEnabled(s.interactMode === "bayonet");
+    setup.knife.setKind(s.bayonetKind);
+    setup.knife.syncWounds(s.abdomenXray);
     if (controlsRef.current) {
       controlsRef.current.enableZoom = !(
         rmbDown.current &&
@@ -1696,6 +1703,20 @@ function FittedFigure({
           enabled: setup.knife.enabled,
           storePen: t,
           wounds: setup.knife.wounds.children.length,
+          kind: setup.knife.kind,
+          bladeLen: setup.knife.bladeLen,
+          totalLen: setup.knife.totalLen,
+          maxPen: setup.knife.maxPen,
+        };
+      };
+      vela.setBayonetKind = (kind: "short" | "long") => {
+        setup.knife.setKind(kind);
+        useStudio.setState({ bayonetKind: kind, interactMode: "bayonet" });
+        return {
+          kind: setup.knife.kind,
+          bladeLen: setup.knife.bladeLen,
+          totalLen: setup.knife.totalLen,
+          maxPen: setup.knife.maxPen,
         };
       };
       vela.pickBayonet = (dx: number, dy: number, dz: number) => {
@@ -1730,6 +1751,10 @@ function FittedFigure({
           penetration: +setup.knife.penetration.toFixed(3),
           squeeze: +setup.knife.squeeze.toFixed(3),
           rawPen: +setup.knife.rawPen.toFixed(3),
+          kind: setup.knife.kind,
+          bladeLen: +setup.knife.bladeLen.toFixed(3),
+          totalLen: +setup.knife.totalLen.toFixed(3),
+          maxPen: +setup.knife.maxPen.toFixed(3),
           entry: setup.knife.entry.toArray(),
           tip: setup.knife.tip.toArray(),
           handle: setup.knife.handle.toArray(),
@@ -1739,10 +1764,18 @@ function FittedFigure({
           cone: 30,
           wounds: setup.knife.wounds.children.length,
           wound0: setup.knife.wounds.children[0]
-            ? (setup.knife.wounds.children[0] as THREE.Mesh).position.toArray()
+            ? (() => {
+                const m = setup.knife.wounds.children[0] as THREE.Mesh;
+                const p = m.geometry.getAttribute("position");
+                return p ? [p.getX(0), p.getY(0), p.getZ(0)] : m.position.toArray();
+              })()
             : null,
           wound1: setup.knife.wounds.children[1]
-            ? (setup.knife.wounds.children[1] as THREE.Mesh).position.toArray()
+            ? (() => {
+                const m = setup.knife.wounds.children[1] as THREE.Mesh;
+                const p = m.geometry.getAttribute("position");
+                return p ? [p.getX(0), p.getY(0), p.getZ(0)] : m.position.toArray();
+              })()
             : null,
           minHp: +minHp.toFixed(3),
         };
@@ -1811,7 +1844,7 @@ function FittedFigure({
         _hit.copy(hit.point);
         _normal.copy(hit.face.normal).transformDirection(hit.object.matrixWorld).normalize();
         if (_normal.dot(_camDir) > 0) _normal.negate();
-        setup.knife.pick(_hit, _normal);
+        setup.knife.pick(_hit, _normal, hit.object as THREE.Mesh, hit.faceIndex ?? -1);
         bayonetPenRef.current = 0;
         const st = useStudio.getState();
         st.setBayonetHasEntry(true);

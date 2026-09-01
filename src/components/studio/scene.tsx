@@ -12,6 +12,7 @@ export default function Scene({
   pelvis,
   arm,
   bayonet,
+  bayonetLong,
   room,
 }: {
   character: THREE.Object3D;
@@ -19,6 +20,7 @@ export default function Scene({
   pelvis: THREE.Object3D;
   arm: THREE.Object3D;
   bayonet: THREE.Object3D;
+  bayonetLong: THREE.Object3D;
   room: THREE.Object3D;
 }) {
   const controlsRef = useRef<OrbitControlsImpl>(null);
@@ -55,6 +57,7 @@ export default function Scene({
             pelvis={pelvis}
             arm={arm}
             bayonet={bayonet}
+            bayonetLong={bayonetLong}
           />
           <ControlsBridge controlsRef={controlsRef} />
         </Suspense>

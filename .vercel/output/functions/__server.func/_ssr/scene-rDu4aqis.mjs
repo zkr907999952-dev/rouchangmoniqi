@@ -1,9 +1,9 @@
 import { i as __toESM } from "../_runtime.mjs";
 import { a as require_jsx_runtime, o as require_react } from "../_libs/@radix-ui/react-collection+[...].mjs";
-import { B as MathUtils, Ct as Vector2, H as Mesh, K as MeshStandardMaterial, R as MOUSE, U as MeshBasicMaterial, V as Matrix4, W as MeshLambertMaterial, _ as Euler, _t as SphereGeometry, bt as TOUCH, d as BufferGeometry, dt as RingGeometry, f as CanvasTexture, ft as SRGBColorSpace, g as DynamicDrawUsage, i as useThree, j as LineSegments, k as LineBasicMaterial, l as Box3, lt as Ray, m as Color, n as Canvas, nt as PlaneGeometry, p as ClampToEdgeWrapping, r as useFrame, rt as PointLight, st as Quaternion, t as OrbitControls, tt as Plane, u as BufferAttribute, vt as Spherical, wt as Vector3, y as Group } from "../_libs/@react-three/drei+[...].mjs";
+import { B as MathUtils, Ct as Vector2, H as Mesh, K as MeshStandardMaterial, R as MOUSE, Tt as Vector4, U as MeshBasicMaterial, V as Matrix4, W as MeshLambertMaterial, _ as Euler, _t as SphereGeometry, bt as TOUCH, d as BufferGeometry, dt as RingGeometry, f as CanvasTexture, ft as SRGBColorSpace, g as DynamicDrawUsage, i as useThree, j as LineSegments, k as LineBasicMaterial, l as Box3, lt as Ray, m as Color, n as Canvas, nt as PlaneGeometry, p as ClampToEdgeWrapping, r as useFrame, rt as PointLight, st as Quaternion, t as OrbitControls, tt as Plane, u as BufferAttribute, vt as Spherical, wt as Vector3, y as Group } from "../_libs/@react-three/drei+[...].mjs";
 import { n as SkeletonUtils } from "../_libs/three-stdlib.mjs";
-import { n as useStudio, r as SoftSkeleton } from "./routes-sGGLMNXm.mjs";
-//#region node_modules/.nitro/vite/services/ssr/assets/scene-BIIpjV85.js
+import { n as useStudio, r as SoftSkeleton } from "./routes-CgjXBDin.mjs";
+//#region node_modules/.nitro/vite/services/ssr/assets/scene-rDu4aqis.js
 var import_react = /* @__PURE__ */ __toESM(require_react());
 var import_jsx_runtime = require_jsx_runtime();
 function addEdge(adj, slot, a, b, len) {
@@ -1091,10 +1091,12 @@ var _down = new Vector3(0, -1, 0);
 var _xA = new Vector3();
 var _zA = new Vector3();
 var _mat = new Matrix4();
-var BLADE_LEN = .248;
+var _t = new Vector3();
+var _b = new Vector3();
+var SHORT_TOTAL = .248;
+var LONG_TOTAL = .42;
 var HOVER = .075;
 var SQUEEZE_MAX = .013;
-var MAX_PEN = .185;
 var BLADE_RAD = .016;
 var HIT_EVERY = .2;
 var MAX_CONE = MathUtils.degToRad(30);
@@ -1108,7 +1110,10 @@ var BayonetPlay = class {
 	penetration = 0;
 	rawPen = 0;
 	punctureEvent = false;
-	bladeLen = BLADE_LEN;
+	kind = "short";
+	bladeLen = SHORT_TOTAL * .6;
+	totalLen = SHORT_TOTAL;
+	maxPen = SHORT_TOTAL * .6;
 	entry = new Vector3();
 	entryNormal = new Vector3(0, 0, 1);
 	restAxis = new Vector3(0, 0, -1);
@@ -1118,22 +1123,63 @@ var BayonetPlay = class {
 	edgeWorld = new Vector3(0, -1, 0);
 	tubes = [];
 	knife = null;
+	knifeShort = null;
+	knifeLong = null;
+	shortStats = {
+		totalLen: SHORT_TOTAL,
+		bladeLen: SHORT_TOTAL * .6
+	};
+	longStats = {
+		totalLen: LONG_TOTAL,
+		bladeLen: LONG_TOTAL * .75
+	};
 	marker = null;
 	woundTex = null;
+	patches = [];
+	skinMeshes = [];
+	xray = {
+		y0: .92,
+		y1: 1.18,
+		xMax: .12,
+		zFront: .1
+	};
+	skinHit = null;
+	skinFace = -1;
+	xrayValue = 0;
 	hitAcc = 0;
 	autoPhase = "idle";
 	holdT = 0;
 	pumpT = 0;
 	autoReleased = false;
-	attach(src, tubes) {
+	attach(shortSrc, tubes, longSrc) {
 		this.root.clear();
 		this.wounds.clear();
+		this.patches = [];
+		this.skinHit = null;
+		this.skinFace = -1;
 		this.tubes = tubes;
-		const prepared = prepareBayonet(src);
-		this.bladeLen = prepared.len;
-		this.knife = prepared.root;
-		this.knife.visible = true;
-		this.root.add(prepared.root);
+		const preparedShort = prepareBayonet(shortSrc, SHORT_TOTAL);
+		this.knifeShort = preparedShort.root;
+		this.shortStats = {
+			totalLen: preparedShort.totalLen,
+			bladeLen: preparedShort.bladeLen
+		};
+		this.root.add(preparedShort.root);
+		if (longSrc) {
+			const preparedLong = prepareBayonet(longSrc, LONG_TOTAL);
+			this.knifeLong = preparedLong.root;
+			this.longStats = {
+				totalLen: preparedLong.totalLen,
+				bladeLen: preparedLong.bladeLen
+			};
+			preparedLong.root.visible = false;
+			this.root.add(preparedLong.root);
+		} else this.knifeLong = null;
+		this.knife = this.knifeShort;
+		this.kind = "short";
+		this.totalLen = this.shortStats.totalLen;
+		this.bladeLen = this.shortStats.bladeLen;
+		this.maxPen = this.bladeLen * .97;
 		const markerGeo = new RingGeometry(.012, .02, 28);
 		const markerMat = new MeshBasicMaterial({
 			color: "#c45a4a",
@@ -1152,6 +1198,28 @@ var BayonetPlay = class {
 		this.root.visible = false;
 		this.loadWoundAtlas();
 		this.reset();
+	}
+	setSkin(meshes, xray) {
+		this.skinMeshes = meshes;
+		this.xray = xray;
+	}
+	setKind(kind) {
+		if (kind === this.kind && this.knife) return;
+		if (kind === "long" && !this.knifeLong) kind = "short";
+		this.kind = kind;
+		const stats = kind === "long" ? this.longStats : this.shortStats;
+		this.totalLen = stats.totalLen;
+		this.bladeLen = stats.bladeLen;
+		this.maxPen = this.bladeLen * .97;
+		if (this.knifeShort) this.knifeShort.visible = kind === "short";
+		if (this.knifeLong) this.knifeLong.visible = kind === "long";
+		this.knife = kind === "long" ? this.knifeLong : this.knifeShort;
+		if (this.hasEntry) {
+			this.rawPen = MathUtils.clamp(this.rawPen, -.075, this.maxPen);
+			this.handle.copy(this.entry).addScaledVector(this.dir, -(this.totalLen - this.rawPen));
+			this.layout();
+			this.updateContact();
+		}
 	}
 	loadWoundAtlas() {
 		const img = new Image();
@@ -1179,7 +1247,7 @@ var BayonetPlay = class {
 		};
 		img.src = "/textures/wounds.png";
 	}
-	pick(point, normal) {
+	pick(point, normal, mesh, faceIndex) {
 		this.hasEntry = true;
 		this.punctured = false;
 		this.punctureEvent = false;
@@ -1196,7 +1264,9 @@ var BayonetPlay = class {
 		if (this.entryNormal.lengthSq() < 1e-6) this.entryNormal.set(0, 0, 1);
 		this.restAxis.copy(this.entryNormal).multiplyScalar(-1);
 		this.dir.copy(this.restAxis);
-		const dist = this.bladeLen - this.rawPen;
+		this.skinHit = mesh ?? null;
+		this.skinFace = faceIndex ?? -1;
+		const dist = this.totalLen - this.rawPen;
 		this.handle.copy(this.entry).addScaledVector(this.dir, -dist);
 		this.layout();
 		this.updateContact();
@@ -1232,34 +1302,33 @@ var BayonetPlay = class {
 		_v.normalize();
 		clampDirToCone(_v, this.restAxis, MAX_CONE);
 		this.dir.copy(_v);
-		const intended = this.bladeLen - len;
+		const intended = this.totalLen - len;
 		if (!this.punctured && intended >= SQUEEZE_MAX * .92) {
 			this.punctured = true;
 			this.punctureEvent = true;
 			this.spawnWound();
 		}
-		const maxPen = this.punctured ? MAX_PEN : SQUEEZE_MAX;
-		const minDist = Math.max(.04, this.bladeLen - maxPen);
-		const maxDist = this.bladeLen + HOVER + .08;
+		const maxPen = this.punctured ? this.maxPen : SQUEEZE_MAX;
+		const minDist = Math.max(.04, this.totalLen - maxPen);
+		const maxDist = this.totalLen + HOVER + .08;
 		const d = MathUtils.clamp(len, minDist, maxDist);
 		this.handle.copy(this.entry).addScaledVector(this.dir, -d);
 		this.layout();
 		this.updateContact();
 	}
 	pen01() {
-		return MathUtils.clamp((this.rawPen + HOVER) / .26, 0, 1);
+		return MathUtils.clamp((this.rawPen + HOVER) / (this.maxPen + HOVER), 0, 1);
 	}
 	setPen01(t) {
 		if (!this.hasEntry) return;
 		const u = MathUtils.clamp(t, 0, 1);
-		this.rawPen = -.075 + u * .26;
-		const dist = this.bladeLen - this.rawPen;
-		this.handle.copy(this.entry).addScaledVector(this.dir, -dist);
+		this.rawPen = -.075 + u * (this.maxPen + HOVER);
+		this.handle.copy(this.entry).addScaledVector(this.dir, -(this.totalLen - this.rawPen));
 		this.layout();
 		this.updateContact();
 	}
 	setRawPen(pen) {
-		this.setPen01((MathUtils.clamp(pen, -.075, MAX_PEN) + HOVER) / .26);
+		this.setPen01((MathUtils.clamp(pen, -.075, this.maxPen) + HOVER) / (this.maxPen + HOVER));
 	}
 	adjustDepth(delta01) {
 		this.setPen01(this.pen01() + delta01);
@@ -1274,6 +1343,10 @@ var BayonetPlay = class {
 		this.releaseEntry();
 		this.autoReleased = false;
 		this.pumpT = 0;
+		this.clearWounds();
+	}
+	clearWounds() {
+		this.patches = [];
 		while (this.wounds.children.length) {
 			const ch = this.wounds.children[0];
 			this.wounds.remove(ch);
@@ -1350,7 +1423,7 @@ var BayonetPlay = class {
 	}
 	updateContact() {
 		const dist = this.handle.distanceTo(this.entry);
-		this.rawPen = this.bladeLen - dist;
+		this.rawPen = this.totalLen - dist;
 		this.squeeze = MathUtils.clamp(this.rawPen / SQUEEZE_MAX, 0, 1);
 		if (!this.punctured && this.rawPen >= SQUEEZE_MAX * .92) {
 			this.punctured = true;
@@ -1360,7 +1433,7 @@ var BayonetPlay = class {
 		this.penetration = this.punctured ? Math.max(0, this.rawPen) : 0;
 	}
 	layout() {
-		this.tip.copy(this.handle).addScaledVector(this.dir, this.bladeLen);
+		this.tip.copy(this.handle).addScaledVector(this.dir, this.totalLen);
 		if (this.knife) {
 			this.knife.position.copy(this.handle);
 			this.orientBladeDown();
@@ -1388,52 +1461,105 @@ var BayonetPlay = class {
 		this.knife.quaternion.setFromRotationMatrix(_mat);
 	}
 	layoutWounds() {
-		for (const obj of this.wounds.children) {
-			const mesh = obj;
-			const entry = mesh.userData.entry;
-			const normal = mesh.userData.normal;
-			if (!entry || !normal) continue;
-			mesh.position.copy(entry).addScaledVector(normal, .0016);
-			_look.copy(mesh.position).add(normal);
-			mesh.lookAt(_look);
-			mesh.rotateZ(mesh.userData.twist ?? 0);
+		this.syncWounds(this.xrayValue);
+	}
+	syncWounds(xray) {
+		this.xrayValue = xray;
+		for (const patch of this.patches) {
+			const src = patch.src.array;
+			const dst = patch.pos.array;
+			for (let i = 0; i < patch.map.length; i++) {
+				const s = patch.map[i] * 3;
+				const d = i * 3;
+				dst[d] = src[s];
+				dst[d + 1] = src[s + 1];
+				dst[d + 2] = src[s + 2];
+			}
+			patch.pos.needsUpdate = true;
+			const shader = patch.mesh.material.userData.shader;
+			if (shader?.uniforms?.uXray) shader.uniforms.uXray.value = xray;
 		}
 	}
 	spawnWound() {
+		const host = this.skinHit ?? nearestSkin(this.skinMeshes, this.entry);
+		if (!host) return;
+		const srcPos = host.geometry.getAttribute("position");
+		if (!srcPos || !(srcPos.array instanceof Float32Array)) return;
+		const patch = buildSkinPatch(host, this.entry, this.entryNormal, this.dir, this.skinFace);
+		if (!patch) return;
 		const tile = Math.random() * 4 | 0;
 		const col = tile & 1;
 		const row = tile >> 1;
-		const u0 = col * .5 + .018;
-		const v0 = (1 - row) * .5 + .018;
-		const uSpan = .464;
-		const vSpan = .464;
-		const geo = new PlaneGeometry(.05, .082);
-		const uv = geo.getAttribute("uv");
-		for (let i = 0; i < uv.count; i++) uv.setXY(i, u0 + uv.getX(i) * uSpan, v0 + uv.getY(i) * vSpan);
+		const u0 = col * .5 + .02;
+		const v0 = (1 - row) * .5 + .02;
+		const uSpan = .46;
+		const vSpan = .46;
+		const twist = (Math.random() - .5) * .5;
+		const cs = Math.cos(twist);
+		const sn = Math.sin(twist);
+		const uv = patch.geo.getAttribute("uv");
+		for (let i = 0; i < uv.count; i++) {
+			const lx = uv.getX(i);
+			const ly = uv.getY(i);
+			uv.setXY(i, lx * cs - ly * sn + .5, lx * sn + ly * cs + .5);
+		}
 		uv.needsUpdate = true;
 		const mat = new MeshBasicMaterial({
 			map: this.woundTex,
-			color: this.woundTex ? "#ffd8d0" : "#b42318",
+			color: this.woundTex ? "#ffd4cc" : "#b42318",
 			transparent: true,
 			opacity: 1,
 			depthWrite: false,
 			depthTest: true,
 			polygonOffset: true,
-			polygonOffsetFactor: -6,
-			polygonOffsetUnits: -6,
+			polygonOffsetFactor: -8,
+			polygonOffsetUnits: -8,
 			toneMapped: false,
-			side: 2
+			side: 0
 		});
-		const mesh = new Mesh(geo, mat);
-		mesh.userData.twist = (Math.random() - .5) * .55;
-		mesh.userData.entry = this.entry.clone();
-		mesh.userData.normal = this.entryNormal.clone();
-		mesh.userData.dir = this.dir.clone();
+		const { y0, y1, xMax, zFront } = this.xray;
+		mat.onBeforeCompile = (shader) => {
+			shader.uniforms.uXray = { value: this.xrayValue };
+			shader.uniforms.uY0 = { value: y0 };
+			shader.uniforms.uY1 = { value: y1 };
+			shader.uniforms.uXMax = { value: xMax };
+			shader.uniforms.uZFront = { value: zFront };
+			shader.uniforms.uTile = { value: new Vector4(u0, v0, uSpan, vSpan) };
+			shader.vertexShader = shader.vertexShader.replace("#include <common>", "#include <common>\nvarying vec3 vBodyW;").replace("#include <begin_vertex>", "#include <begin_vertex>\nvBodyW = (modelMatrix * vec4(transformed, 1.0)).xyz;");
+			shader.fragmentShader = shader.fragmentShader.replace("#include <common>", `#include <common>
+uniform float uXray; uniform float uY0; uniform float uY1; uniform float uXMax; uniform float uZFront;
+uniform vec4 uTile;
+varying vec3 vBodyW;
+float xrayHole() {
+  float band = smoothstep(uY0, uY0 + 0.08, vBodyW.y) * (1.0 - smoothstep(uY1 - 0.08, uY1, vBodyW.y));
+  float torso = 1.0 - smoothstep(uXMax * 0.65, uXMax + 0.1, abs(vBodyW.x));
+  float front = smoothstep(uZFront - 0.16, uZFront + 0.04, vBodyW.z);
+  return clamp(band * torso * front * uXray, 0.0, 1.0);
+}`).replace("#include <map_fragment>", `#ifdef USE_MAP
+           if (vMapUv.x < 0.0 || vMapUv.x > 1.0 || vMapUv.y < 0.0 || vMapUv.y > 1.0) discard;
+           vec4 sampledDiffuseColor = texture2D(map, uTile.xy + vMapUv * uTile.zw);
+           if (sampledDiffuseColor.a < 0.08) discard;
+           diffuseColor *= sampledDiffuseColor;
+           #endif`).replace("#include <dithering_fragment>", `if (!gl_FrontFacing) discard;
+           float hole = xrayHole();
+           gl_FragColor.a *= mix(1.0, 0.06, pow(hole, 0.68));
+           if (gl_FragColor.a < 0.04) discard;
+           #include <dithering_fragment>`);
+			mat.userData.shader = shader;
+		};
+		mat.needsUpdate = true;
+		const mesh = new Mesh(patch.geo, mat);
 		mesh.frustumCulled = false;
-		mesh.renderOrder = 18;
+		mesh.renderOrder = 8;
 		mesh.raycast = () => {};
 		this.wounds.add(mesh);
-		this.layoutWounds();
+		this.patches.push({
+			mesh,
+			src: srcPos,
+			map: patch.map,
+			pos: patch.pos
+		});
+		this.syncWounds(this.xrayValue);
 	}
 	deformGuts(gut = 1) {
 		const reach = this.penetration + .012;
@@ -1494,6 +1620,91 @@ var BayonetPlay = class {
 		}
 	}
 };
+function nearestSkin(meshes, point) {
+	let best = null;
+	let bestD = 1e9;
+	for (const mesh of meshes) {
+		const pos = mesh.geometry.getAttribute("position");
+		if (!pos) continue;
+		const arr = pos.array;
+		const step = Math.max(1, Math.floor(pos.count / 4e3));
+		for (let i = 0; i < pos.count; i += step) {
+			const dx = arr[i * 3] - point.x;
+			const dy = arr[i * 3 + 1] - point.y;
+			const dz = arr[i * 3 + 2] - point.z;
+			const d = dx * dx + dy * dy + dz * dz;
+			if (d < bestD) {
+				bestD = d;
+				best = mesh;
+			}
+		}
+	}
+	return best;
+}
+function buildSkinPatch(mesh, center, normal, dir, faceIndex) {
+	const geo = mesh.geometry;
+	const pos = geo.getAttribute("position");
+	const arr = pos.array;
+	const index = geo.getIndex();
+	const triCount = index ? index.count / 3 : Math.floor(pos.count / 3);
+	const r2 = .002116;
+	const faces = [];
+	const vertAt = (f, k) => {
+		if (index) return index.getX(f * 3 + k);
+		return f * 3 + k;
+	};
+	const near = (vi) => {
+		const d0 = arr[vi * 3] - center.x;
+		const d1 = arr[vi * 3 + 1] - center.y;
+		const d2 = arr[vi * 3 + 2] - center.z;
+		return d0 * d0 + d1 * d1 + d2 * d2 <= r2;
+	};
+	if (faceIndex >= 0 && faceIndex < triCount) faces.push(faceIndex);
+	for (let f = 0; f < triCount; f++) {
+		if (f === faceIndex) continue;
+		if (near(vertAt(f, 0)) || near(vertAt(f, 1)) || near(vertAt(f, 2))) faces.push(f);
+	}
+	if (faces.length < 1) return null;
+	const remap = /* @__PURE__ */ new Map();
+	const map = [];
+	const positions = [];
+	const uvs = [];
+	_t.crossVectors(normal, dir);
+	if (_t.lengthSq() < 1e-8) _t.crossVectors(normal, _down);
+	if (_t.lengthSq() < 1e-8) _t.set(1, 0, 0);
+	_t.normalize();
+	_b.crossVectors(normal, _t).normalize();
+	const take = (vi) => {
+		let id = remap.get(vi);
+		if (id !== void 0) return id;
+		id = map.length;
+		remap.set(vi, id);
+		map.push(vi);
+		const x = arr[vi * 3];
+		const y = arr[vi * 3 + 1];
+		const z = arr[vi * 3 + 2];
+		positions.push(x, y, z);
+		const dx = x - center.x;
+		const dy = y - center.y;
+		const dz = z - center.z;
+		uvs.push((dx * _t.x + dy * _t.y + dz * _t.z) / .052, (dx * _b.x + dy * _b.y + dz * _b.z) / .084);
+		return id;
+	};
+	const idx = [];
+	for (const f of faces) idx.push(take(vertAt(f, 0)), take(vertAt(f, 1)), take(vertAt(f, 2)));
+	const out = new BufferGeometry();
+	const posAttr = new BufferAttribute(new Float32Array(positions), 3);
+	posAttr.setUsage(DynamicDrawUsage);
+	out.setAttribute("position", posAttr);
+	out.setAttribute("uv", new BufferAttribute(new Float32Array(uvs), 2));
+	out.setIndex(idx);
+	out.computeVertexNormals();
+	return {
+		geo: out,
+		map: new Int32Array(map),
+		pos: posAttr
+	};
+}
 function clampDirToCone(dir, axis, maxAng) {
 	_side.copy(axis).normalize();
 	dir.normalize();
@@ -1510,7 +1721,7 @@ function clampDirToCone(dir, axis, maxAng) {
 	dir.copy(_side).applyQuaternion(_q);
 	return dir;
 }
-function prepareBayonet(src) {
+function prepareBayonet(src, totalLen) {
 	const holder = new Group();
 	const clone = src.clone(true);
 	clone.updateMatrixWorld(true);
@@ -1521,7 +1732,8 @@ function prepareBayonet(src) {
 	});
 	if (!srcMesh) return {
 		root: holder,
-		len: BLADE_LEN
+		totalLen,
+		bladeLen: totalLen * .62
 	};
 	const srcM = srcMesh;
 	srcM.updateWorldMatrix(true, false);
@@ -1550,27 +1762,17 @@ function prepareBayonet(src) {
 	const minA = axis === 0 ? minX : axis === 1 ? minY : minZ;
 	const maxA = axis === 0 ? maxX : axis === 1 ? maxY : maxZ;
 	const span = Math.max(1e-4, maxA - minA);
-	const thick = (end) => {
-		const lo = end === "lo" ? minA : maxA - span * .12;
-		const hi = end === "lo" ? minA + span * .12 : maxA;
-		let r = 0;
+	const dens = (end) => {
+		const lo = end === "lo" ? minA : maxA - span * .18;
+		const hi = end === "lo" ? minA + span * .18 : maxA;
 		let n = 0;
-		const cx = (minX + maxX) * .5;
-		const cy = (minY + maxY) * .5;
-		const cz = (minZ + maxZ) * .5;
 		for (let i = 0; i < count; i++) {
-			const x = arr[i * 3];
-			const y = arr[i * 3 + 1];
-			const z = arr[i * 3 + 2];
-			const a = axis === 0 ? x : axis === 1 ? y : z;
-			if (a < lo || a > hi) continue;
-			const d = axis === 0 ? Math.hypot(y - cy, z - cz) : axis === 1 ? Math.hypot(x - cx, z - cz) : Math.hypot(x - cx, y - cy);
-			r += d;
-			n++;
+			const a = axis === 0 ? arr[i * 3] : axis === 1 ? arr[i * 3 + 1] : arr[i * 3 + 2];
+			if (a >= lo && a <= hi) n++;
 		}
-		return n > 0 ? r / n : 1;
+		return n;
 	};
-	const tipAtMax = thick("hi") <= thick("lo");
+	const tipAtMax = dens("hi") < dens("lo");
 	const tipA = tipAtMax ? maxA : minA;
 	const hdlA = tipAtMax ? minA : maxA;
 	const mid = (t) => {
@@ -1600,12 +1802,12 @@ function prepareBayonet(src) {
 	_v.copy(tip).sub(hdl);
 	if (_v.lengthSq() < 1e-10) _v.set(0, 1, 0);
 	_q.setFromUnitVectors(_v.normalize(), _axisY);
-	const scl = BLADE_LEN / (tip.distanceTo(hdl) || span);
+	const scl = totalLen / (tip.distanceTo(hdl) || span);
 	for (let i = 0; i < count; i++) {
 		_v.set(arr[i * 3] - hdl.x, arr[i * 3 + 1] - hdl.y, arr[i * 3 + 2] - hdl.z);
 		_v.applyQuaternion(_q).multiplyScalar(scl);
 		arr[i * 3] = _v.x;
-		arr[i * 3 + 1] = BLADE_LEN - _v.y;
+		arr[i * 3 + 1] = _v.y;
 		arr[i * 3 + 2] = _v.z;
 	}
 	const nrm = geo.getAttribute("normal");
@@ -1613,7 +1815,6 @@ function prepareBayonet(src) {
 		const na = nrm.array;
 		for (let i = 0; i < nrm.count; i++) {
 			_v.set(na[i * 3], na[i * 3 + 1], na[i * 3 + 2]).applyQuaternion(_q);
-			_v.y = -_v.y;
 			_v.normalize();
 			na[i * 3] = _v.x;
 			na[i * 3 + 1] = _v.y;
@@ -1643,8 +1844,35 @@ function prepareBayonet(src) {
 	holder.add(mesh);
 	return {
 		root: holder,
-		len: BLADE_LEN
+		totalLen,
+		bladeLen: detectBladeLen(arr, count, totalLen)
 	};
+}
+function detectBladeLen(arr, count, totalLen) {
+	const bins = 40;
+	const ext = new Float32Array(bins);
+	const ns = new Int32Array(bins);
+	for (let i = 0; i < count; i++) {
+		const y = arr[i * 3 + 1];
+		const b = Math.min(39, Math.max(0, Math.floor(y / Math.max(1e-4, totalLen) * bins)));
+		const r = Math.hypot(arr[i * 3], arr[i * 3 + 2]);
+		if (r > ext[b]) ext[b] = r;
+		ns[b]++;
+	}
+	const samples = [];
+	for (let i = 39; i >= Math.floor(bins * .55); i--) if (ns[i] > 3) samples.push(ext[i]);
+	samples.sort((a, b) => a - b);
+	const bladeExt = samples.length ? samples[samples.length >> 1] : .012;
+	let guardBin = Math.floor(bins * .38);
+	for (let i = 38; i >= 2; i--) {
+		if (ns[i] < 3) continue;
+		if (ext[i] > bladeExt * 1.7 && ext[i] > bladeExt + .005) {
+			guardBin = i;
+			break;
+		}
+	}
+	const bladeLen = totalLen - (guardBin + .2) / bins * totalLen;
+	return MathUtils.clamp(bladeLen, totalLen * .48, totalLen * .84);
 }
 var _hit = new Vector3();
 var _normal = new Vector3();
@@ -2571,17 +2799,18 @@ function attachXray(mesh, y0, y1, xMax, zFront, list, overlays) {
 	overlays.push(overlay);
 	return overlay;
 }
-function Figure({ controlsRef, character, intestines, pelvis, arm, bayonet }) {
+function Figure({ controlsRef, character, intestines, pelvis, arm, bayonet, bayonetLong }) {
 	return /* @__PURE__ */ (0, import_jsx_runtime.jsx)(FittedFigure, {
 		character,
 		intestines,
 		pelvis,
 		arm,
 		bayonet,
+		bayonetLong,
 		controlsRef
 	});
 }
-function FittedFigure({ character, intestines, pelvis, arm, bayonet, controlsRef }) {
+function FittedFigure({ character, intestines, pelvis, arm, bayonet, bayonetLong, controlsRef }) {
 	const pokeRef = (0, import_react.useRef)(null);
 	const ringRef = (0, import_react.useRef)(null);
 	const lastShake = (0, import_react.useRef)(0);
@@ -2714,7 +2943,13 @@ function FittedFigure({ character, intestines, pelvis, arm, bayonet, controlsRef
 		fist.setMid(navel);
 		root.add(fist.root);
 		const knife = new BayonetPlay();
-		knife.attach(bayonet, peristalsis.getTubes());
+		knife.attach(bayonet, peristalsis.getTubes(), bayonetLong);
+		knife.setSkin(torsoMeshes, {
+			y0: yX0,
+			y1: yX1,
+			xMax: .12,
+			zFront: skinZ - .01
+		});
 		root.add(knife.root);
 		root.add(knife.wounds);
 		pelvic.traverse((obj) => {
@@ -2850,7 +3085,8 @@ function FittedFigure({ character, intestines, pelvis, arm, bayonet, controlsRef
 		intestines,
 		pelvis,
 		arm,
-		bayonet
+		bayonet,
+		bayonetLong
 	]);
 	(0, import_react.useEffect)(() => {
 		const id = requestAnimationFrame(() => {
@@ -3011,6 +3247,8 @@ function FittedFigure({ character, intestines, pelvis, arm, bayonet, controlsRef
 		setup.fist.setEnabled(s.interactMode === "fist");
 		setup.fist.setMaxScale(s.fistMaxDepth);
 		setup.knife.setEnabled(s.interactMode === "bayonet");
+		setup.knife.setKind(s.bayonetKind);
+		setup.knife.syncWounds(s.abdomenXray);
 		if (controlsRef.current) controlsRef.current.enableZoom = !(rmbDown.current && s.interactMode === "bayonet" && setup.knife.hasEntry);
 		if (!s.bayonetHasEntry && setup.knife.hasEntry) setup.knife.releaseEntry();
 		const grabbingKnife = grab.current?.mode === "bayonet";
@@ -3197,7 +3435,24 @@ function FittedFigure({ character, intestines, pelvis, arm, bayonet, controlsRef
 					rawPen: setup.knife.rawPen,
 					enabled: setup.knife.enabled,
 					storePen: t,
-					wounds: setup.knife.wounds.children.length
+					wounds: setup.knife.wounds.children.length,
+					kind: setup.knife.kind,
+					bladeLen: setup.knife.bladeLen,
+					totalLen: setup.knife.totalLen,
+					maxPen: setup.knife.maxPen
+				};
+			};
+			vela.setBayonetKind = (kind) => {
+				setup.knife.setKind(kind);
+				useStudio.setState({
+					bayonetKind: kind,
+					interactMode: "bayonet"
+				});
+				return {
+					kind: setup.knife.kind,
+					bladeLen: setup.knife.bladeLen,
+					totalLen: setup.knife.totalLen,
+					maxPen: setup.knife.maxPen
 				};
 			};
 			vela.pickBayonet = (dx, dy, dz) => {
@@ -3239,6 +3494,10 @@ function FittedFigure({ character, intestines, pelvis, arm, bayonet, controlsRef
 					penetration: +setup.knife.penetration.toFixed(3),
 					squeeze: +setup.knife.squeeze.toFixed(3),
 					rawPen: +setup.knife.rawPen.toFixed(3),
+					kind: setup.knife.kind,
+					bladeLen: +setup.knife.bladeLen.toFixed(3),
+					totalLen: +setup.knife.totalLen.toFixed(3),
+					maxPen: +setup.knife.maxPen.toFixed(3),
 					entry: setup.knife.entry.toArray(),
 					tip: setup.knife.tip.toArray(),
 					handle: setup.knife.handle.toArray(),
@@ -3247,8 +3506,24 @@ function FittedFigure({ character, intestines, pelvis, arm, bayonet, controlsRef
 					edge: setup.knife.edgeWorld.toArray(),
 					cone: 30,
 					wounds: setup.knife.wounds.children.length,
-					wound0: setup.knife.wounds.children[0] ? setup.knife.wounds.children[0].position.toArray() : null,
-					wound1: setup.knife.wounds.children[1] ? setup.knife.wounds.children[1].position.toArray() : null,
+					wound0: setup.knife.wounds.children[0] ? (() => {
+						const m = setup.knife.wounds.children[0];
+						const p = m.geometry.getAttribute("position");
+						return p ? [
+							p.getX(0),
+							p.getY(0),
+							p.getZ(0)
+						] : m.position.toArray();
+					})() : null,
+					wound1: setup.knife.wounds.children[1] ? (() => {
+						const m = setup.knife.wounds.children[1];
+						const p = m.geometry.getAttribute("position");
+						return p ? [
+							p.getX(0),
+							p.getY(0),
+							p.getZ(0)
+						] : m.position.toArray();
+					})() : null,
 					minHp: +minHp.toFixed(3)
 				};
 			}
@@ -3309,7 +3584,7 @@ function FittedFigure({ character, intestines, pelvis, arm, bayonet, controlsRef
 				_hit.copy(hit.point);
 				_normal.copy(hit.face.normal).transformDirection(hit.object.matrixWorld).normalize();
 				if (_normal.dot(_camDir) > 0) _normal.negate();
-				setup.knife.pick(_hit, _normal);
+				setup.knife.pick(_hit, _normal, hit.object, hit.faceIndex ?? -1);
 				bayonetPenRef.current = 0;
 				const st = useStudio.getState();
 				st.setBayonetHasEntry(true);
@@ -3420,7 +3695,7 @@ function FittedFigure({ character, intestines, pelvis, arm, bayonet, controlsRef
 		})
 	] });
 }
-function Scene({ character, intestines, pelvis, arm, bayonet, room }) {
+function Scene({ character, intestines, pelvis, arm, bayonet, bayonetLong, room }) {
 	const controlsRef = (0, import_react.useRef)(null);
 	return /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", {
 		className: "absolute inset-0 touch-none",
@@ -3461,7 +3736,8 @@ function Scene({ character, intestines, pelvis, arm, bayonet, room }) {
 						intestines,
 						pelvis,
 						arm,
-						bayonet
+						bayonet,
+						bayonetLong
 					}),
 					/* @__PURE__ */ (0, import_jsx_runtime.jsx)(ControlsBridge, { controlsRef })
 				]

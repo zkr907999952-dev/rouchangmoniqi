@@ -3,6 +3,7 @@ import type { ExpressionId, PoseId } from "@/lib/softbody/soft-skeleton";
 
 export type PresetId = "soft" | "firm" | "jelly" | "athletic";
 export type InteractMode = "drag" | "pose" | "strike" | "fist" | "bayonet";
+export type BayonetKind = "short" | "long";
 export type BedStance = "front" | "on" | "lie";
 
 export type StudioParams = {
@@ -230,6 +231,7 @@ type StudioState = StudioParams & {
   bayonetPen: number;
   bayonetAuto: boolean;
   bayonetPump: boolean;
+  bayonetKind: BayonetKind;
   setParam: <K extends keyof StudioParams>(key: K, value: StudioParams[K]) => void;
   applyPreset: (id: PresetId) => void;
   setInteractMode: (mode: InteractMode) => void;
@@ -241,6 +243,7 @@ type StudioState = StudioParams & {
   setBayonetPen: (v: number) => void;
   setBayonetAuto: (v: boolean) => void;
   setBayonetPump: (v: boolean) => void;
+  setBayonetKind: (v: BayonetKind) => void;
   shake: () => void;
   fireStrike: (point?: [number, number, number] | null) => void;
   resetSim: () => void;
@@ -268,6 +271,7 @@ export const useStudio = create<StudioState>((set) => ({
   bayonetPen: 0,
   bayonetAuto: false,
   bayonetPump: false,
+  bayonetKind: "short",
   setParam: (key, value) =>
     set((s) => ({
       ...s,
@@ -318,6 +322,7 @@ export const useStudio = create<StudioState>((set) => ({
   setBayonetPen: (bayonetPen) => set({ bayonetPen: Math.max(0, Math.min(1, bayonetPen)) }),
   setBayonetAuto: (bayonetAuto) => set((s) => ({ bayonetAuto, bayonetPump: bayonetAuto ? false : s.bayonetPump })),
   setBayonetPump: (bayonetPump) => set((s) => ({ bayonetPump, bayonetAuto: bayonetPump ? false : s.bayonetAuto })),
+  setBayonetKind: (bayonetKind) => set({ bayonetKind, interactMode: "bayonet" }),
   shake: () => set((s) => ({ shakeNonce: s.shakeNonce + 1 })),
   fireStrike: (point = null) =>
     set((s) => ({ strikeNonce: s.strikeNonce + 1, strikePoint: point ?? null })),

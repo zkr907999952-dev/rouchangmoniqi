@@ -7,7 +7,7 @@ import { t as create } from "../_libs/zustand.mjs";
 import { i as SliderTrack, n as SliderRange, r as SliderThumb, t as Slider } from "../_libs/@radix-ui/react-slider+[...].mjs";
 import { t as clsx } from "../_libs/clsx.mjs";
 import { t as twMerge } from "../_libs/tailwind-merge.mjs";
-//#region node_modules/.nitro/vite/services/ssr/assets/routes-sGGLMNXm.js
+//#region node_modules/.nitro/vite/services/ssr/assets/routes-CgjXBDin.js
 var import_react = /* @__PURE__ */ __toESM(require_react());
 var import_jsx_runtime = require_jsx_runtime();
 var __defProp = Object.defineProperty;
@@ -1494,6 +1494,7 @@ var useStudio = create((set) => ({
 	bayonetPen: 0,
 	bayonetAuto: false,
 	bayonetPump: false,
+	bayonetKind: "short",
 	setParam: (key, value) => set((s) => ({
 		...s,
 		[key]: value,
@@ -1548,6 +1549,10 @@ var useStudio = create((set) => ({
 		bayonetPump,
 		bayonetAuto: bayonetPump ? false : s.bayonetAuto
 	})),
+	setBayonetKind: (bayonetKind) => set({
+		bayonetKind,
+		interactMode: "bayonet"
+	}),
 	shake: () => set((s) => ({ shakeNonce: s.shakeNonce + 1 })),
 	fireStrike: (point = null) => set((s) => ({
 		strikeNonce: s.strikeNonce + 1,
@@ -1786,9 +1791,11 @@ function Overlay() {
 	const bayonetPen = useStudio((s) => s.bayonetPen);
 	const bayonetAuto = useStudio((s) => s.bayonetAuto);
 	const bayonetPump = useStudio((s) => s.bayonetPump);
+	const bayonetKind = useStudio((s) => s.bayonetKind);
 	const setBayonetPen = useStudio((s) => s.setBayonetPen);
 	const setBayonetAuto = useStudio((s) => s.setBayonetAuto);
 	const setBayonetPump = useStudio((s) => s.setBayonetPump);
+	const setBayonetKind = useStudio((s) => s.setBayonetKind);
 	(0, import_react.useEffect)(() => {
 		const onKey = (e) => {
 			const tag = e.target?.tagName;
@@ -2118,9 +2125,15 @@ function Overlay() {
 											}),
 											/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("button", {
 												type: "button",
-												onClick: () => setInteractMode("bayonet"),
-												className: cn("col-span-2 inline-flex h-11 items-center justify-center gap-1.5 rounded-md text-sm font-medium transition-colors duration-fast", interactMode === "bayonet" ? "bg-accent text-accent-fg" : "border border-border bg-surface-2 text-muted hover:text-fg"),
+												onClick: () => setBayonetKind("short"),
+												className: cn("inline-flex h-11 items-center justify-center gap-1.5 rounded-md text-sm font-medium transition-colors duration-fast", interactMode === "bayonet" && bayonetKind === "short" ? "bg-accent text-accent-fg" : "border border-border bg-surface-2 text-muted hover:text-fg"),
 												children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)(Sword, { className: "size-4" }), "刺刀"]
+											}),
+											/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("button", {
+												type: "button",
+												onClick: () => setBayonetKind("long"),
+												className: cn("inline-flex h-11 items-center justify-center gap-1.5 rounded-md text-sm font-medium transition-colors duration-fast", interactMode === "bayonet" && bayonetKind === "long" ? "bg-accent text-accent-fg" : "border border-border bg-surface-2 text-muted hover:text-fg"),
+												children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)(Sword, { className: "size-4" }), "长刺刀"]
 											})
 										]
 									}),
@@ -2272,7 +2285,7 @@ function Overlay() {
 										children: [
 											/* @__PURE__ */ (0, import_jsx_runtime.jsx)("p", {
 												className: "text-xs leading-relaxed text-muted",
-												children: bayonetHasEntry ? "已锁定刺入点。拖动同时改角度（垂直±30°）和深度。按住右键滚轮也可调深度。刀伤会保留到复位。" : "点击腹壁选择刺入点。刀伤会一直留着，直到点复位。"
+												children: bayonetHasEntry ? `${bayonetKind === "long" ? "长刺刀" : "刺刀"}已锁定刺入点。拖动改角度和深度。刀刃可全部没入，刀柄停在体外。` : "点击腹壁选择刺入点。刀伤会一直留着，直到点复位。"
 											}),
 											/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
 												className: "mt-3 grid grid-cols-2 gap-2",
@@ -2459,21 +2472,30 @@ function Overlay() {
 										}),
 										/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
 											className: "grid grid-cols-3 gap-2",
-											children: [/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("button", {
-												type: "button",
-												onClick: () => setInteractMode(interactMode === "bayonet" ? "drag" : "bayonet"),
-												className: cn("flex aspect-square flex-col items-center justify-center gap-1 rounded-md border text-[11px] font-medium", interactMode === "bayonet" ? "border-accent bg-accent text-accent-fg" : "border-border bg-surface-2 text-muted hover:text-fg"),
-												children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)(Sword, { className: "size-5" }), "刺刀"]
-											}), Array.from({ length: 5 }, (_, i) => /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", {
-												className: "flex aspect-square items-center justify-center rounded-md border border-dashed border-border bg-surface-2/50 text-muted",
-												children: /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Crosshair, { className: "size-4 opacity-40" })
-											}, i))]
+											children: [
+												/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("button", {
+													type: "button",
+													onClick: () => setBayonetKind("short"),
+													className: cn("flex aspect-square flex-col items-center justify-center gap-1 rounded-md border text-[11px] font-medium", interactMode === "bayonet" && bayonetKind === "short" ? "border-accent bg-accent text-accent-fg" : "border-border bg-surface-2 text-muted hover:text-fg"),
+													children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)(Sword, { className: "size-5" }), "刺刀"]
+												}),
+												/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("button", {
+													type: "button",
+													onClick: () => setBayonetKind("long"),
+													className: cn("flex aspect-square flex-col items-center justify-center gap-1 rounded-md border text-[11px] font-medium", interactMode === "bayonet" && bayonetKind === "long" ? "border-accent bg-accent text-accent-fg" : "border-border bg-surface-2 text-muted hover:text-fg"),
+													children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)(Sword, { className: "size-5" }), "长刺刀"]
+												}),
+												Array.from({ length: 4 }, (_, i) => /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", {
+													className: "flex aspect-square items-center justify-center rounded-md border border-dashed border-border bg-surface-2/50 text-muted",
+													children: /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Crosshair, { className: "size-4 opacity-40" })
+												}, i))
+											]
 										}),
 										interactMode === "bayonet" ? /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
 											className: "flex flex-col gap-2",
 											children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("p", {
 												className: "text-xs text-muted",
-												children: bayonetHasEntry ? "刺入点已锁定。拖动改角度和深度。" : bayonetAuto ? "自动刺入已开：点腹壁后会垂直刺入，再等待下一次。" : "装备中 · 点击腹壁选择刺入点。"
+												children: bayonetHasEntry ? `${bayonetKind === "long" ? "长刺刀" : "刺刀"}刺入点已锁定。刀刃可全部没入，刀柄停在体外。` : bayonetAuto ? "自动刺入已开：点腹壁后会垂直刺入，再等待下一次。" : "装备中 · 点击腹壁选择刺入点。"
 											}), /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
 												className: "grid grid-cols-2 gap-2",
 												children: [
@@ -2515,7 +2537,7 @@ function Overlay() {
 					className: "pointer-events-none absolute bottom-auto left-4 hidden items-center gap-2 text-xs text-muted sm:bottom-6 sm:flex",
 					children: [
 						/* @__PURE__ */ (0, import_jsx_runtime.jsx)(Hand, { className: "size-3.5" }),
-						/* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { children: interactMode === "pose" ? "姿势" : interactMode === "strike" ? "击腹" : interactMode === "fist" ? "拳交" : interactMode === "bayonet" ? "刺刀" : "拖拽" }),
+						/* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { children: interactMode === "pose" ? "姿势" : interactMode === "strike" ? "击腹" : interactMode === "fist" ? "拳交" : interactMode === "bayonet" ? bayonetKind === "long" ? "长刺刀" : "刺刀" : "拖拽" }),
 						/* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", {
 							className: "text-border",
 							children: "/"
@@ -2598,6 +2620,13 @@ var MODEL_FILES = [
 		bytes: 3873372,
 		path: "/models/",
 		hint: "刺刀"
+	},
+	{
+		id: "bayonetLong",
+		url: "/models/bayonet-long.glb",
+		bytes: 158192,
+		path: "/models/",
+		hint: "长刺刀"
 	},
 	{
 		id: "room",
@@ -2699,10 +2728,16 @@ function useModelAssets(enabled) {
 				const bayonet = await parseGlb(buffers[4], MODEL_FILES[4].path);
 				if (cancelled) return;
 				useStudio.setState({
+					loadProgress: 98,
+					loadHint: "解析长刺刀"
+				});
+				const bayonetLong = await parseGlb(buffers[5], MODEL_FILES[5].path);
+				if (cancelled) return;
+				useStudio.setState({
 					loadProgress: 99,
 					loadHint: "解析房间"
 				});
-				const room = await parseGlb(buffers[5], MODEL_FILES[5].path);
+				const room = await parseGlb(buffers[6], MODEL_FILES[6].path);
 				if (cancelled) return;
 				useStudio.setState({
 					loadProgress: 99,
@@ -2714,6 +2749,7 @@ function useModelAssets(enabled) {
 					pelvis,
 					arm,
 					bayonet,
+					bayonetLong,
 					room
 				});
 			} catch (err) {
@@ -2733,7 +2769,7 @@ function useModelAssets(enabled) {
 	}, [enabled, retryNonce]);
 	return scenes;
 }
-var Scene = (0, import_react.lazy)(() => import("./scene-BIIpjV85.mjs"));
+var Scene = (0, import_react.lazy)(() => import("./scene-rDu4aqis.mjs"));
 function StudioApp() {
 	const [mounted, setMounted] = (0, import_react.useState)(false);
 	(0, import_react.useEffect)(() => setMounted(true), []);
@@ -2748,6 +2784,7 @@ function StudioApp() {
 				pelvis: scenes.pelvis,
 				arm: scenes.arm,
 				bayonet: scenes.bayonet,
+				bayonetLong: scenes.bayonetLong,
 				room: scenes.room
 			})
 		}) : null, /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Overlay, {})]

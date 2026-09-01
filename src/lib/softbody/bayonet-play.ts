@@ -12,14 +12,25 @@ const _down = new THREE.Vector3(0, -1, 0);
 const _xA = new THREE.Vector3();
 const _zA = new THREE.Vector3();
 const _mat = new THREE.Matrix4();
+const _t = new THREE.Vector3();
+const _b = new THREE.Vector3();
 
-const BLADE_LEN = 0.248;
+type WoundPatch = {
+  mesh: THREE.Mesh;
+  src: THREE.BufferAttribute;
+  map: Int32Array;
+  pos: THREE.BufferAttribute;
+};
+
+const SHORT_TOTAL = 0.248;
+const LONG_TOTAL = 0.42;
 const HOVER = 0.075;
 const SQUEEZE_MAX = 0.013;
-const MAX_PEN = 0.185;
 const BLADE_RAD = 0.016;
 const HIT_EVERY = 0.2;
 const MAX_CONE = THREE.MathUtils.degToRad(30);
+
+export type BayonetKind = "short" | "long";
 
 export class BayonetPlay {
   readonly root = new THREE.Group();
@@ -31,7 +42,10 @@ export class BayonetPlay {
   penetration = 0;
   rawPen = 0;
   punctureEvent = false;
-  bladeLen = BLADE_LEN;
+  kind: BayonetKind = "short";
+  bladeLen = SHORT_TOTAL * 0.6;
+  totalLen = SHORT_TOTAL;
+  maxPen = SHORT_TOTAL * 0.6;
   readonly entry = new THREE.Vector3();
   readonly entryNormal = new THREE.Vector3(0, 0, 1);
   readonly restAxis = new THREE.Vector3(0, 0, -1);
@@ -41,23 +55,49 @@ export class BayonetPlay {
   readonly edgeWorld = new THREE.Vector3(0, -1, 0);
   private tubes: TubeAlong[] = [];
   private knife: THREE.Object3D | null = null;
+  private knifeShort: THREE.Object3D | null = null;
+  private knifeLong: THREE.Object3D | null = null;
+  private shortStats = { totalLen: SHORT_TOTAL, bladeLen: SHORT_TOTAL * 0.6 };
+  private longStats = { totalLen: LONG_TOTAL, bladeLen: LONG_TOTAL * 0.75 };
   private marker: THREE.Mesh | null = null;
   private woundTex: THREE.CanvasTexture | null = null;
+  private patches: WoundPatch[] = [];
+  private skinMeshes: THREE.Mesh[] = [];
+  private xray = { y0: 0.92, y1: 1.18, xMax: 0.12, zFront: 0.1 };
+  private skinHit: THREE.Mesh | null = null;
+  private skinFace = -1;
+  private xrayValue = 0;
   private hitAcc = 0;
   private autoPhase: "idle" | "in" | "hold" | "out" = "idle";
   private holdT = 0;
   private pumpT = 0;
   autoReleased = false;
 
-  attach(src: THREE.Object3D, tubes: TubeAlong[]) {
+  attach(shortSrc: THREE.Object3D, tubes: TubeAlong[], longSrc?: THREE.Object3D) {
     this.root.clear();
     this.wounds.clear();
+    this.patches = [];
+    this.skinHit = null;
+    this.skinFace = -1;
     this.tubes = tubes;
-    const prepared = prepareBayonet(src);
-    this.bladeLen = prepared.len;
-    this.knife = prepared.root;
-    this.knife.visible = true;
-    this.root.add(prepared.root);
+    const preparedShort = prepareBayonet(shortSrc, SHORT_TOTAL);
+    this.knifeShort = preparedShort.root;
+    this.shortStats = { totalLen: preparedShort.totalLen, bladeLen: preparedShort.bladeLen };
+    this.root.add(preparedShort.root);
+    if (longSrc) {
+      const preparedLong = prepareBayonet(longSrc, LONG_TOTAL);
+      this.knifeLong = preparedLong.root;
+      this.longStats = { totalLen: preparedLong.totalLen, bladeLen: preparedLong.bladeLen };
+      preparedLong.root.visible = false;
+      this.root.add(preparedLong.root);
+    } else {
+      this.knifeLong = null;
+    }
+    this.knife = this.knifeShort;
+    this.kind = "short";
+    this.totalLen = this.shortStats.totalLen;
+    this.bladeLen = this.shortStats.bladeLen;
+    this.maxPen = this.bladeLen * 0.97;
 
     const markerGeo = new THREE.RingGeometry(0.012, 0.02, 28);
     const markerMat = new THREE.MeshBasicMaterial({
@@ -78,6 +118,30 @@ export class BayonetPlay {
     this.root.visible = false;
     this.loadWoundAtlas();
     this.reset();
+  }
+
+  setSkin(meshes: THREE.Mesh[], xray: { y0: number; y1: number; xMax: number; zFront: number }) {
+    this.skinMeshes = meshes;
+    this.xray = xray;
+  }
+
+  setKind(kind: BayonetKind) {
+    if (kind === this.kind && this.knife) return;
+    if (kind === "long" && !this.knifeLong) kind = "short";
+    this.kind = kind;
+    const stats = kind === "long" ? this.longStats : this.shortStats;
+    this.totalLen = stats.totalLen;
+    this.bladeLen = stats.bladeLen;
+    this.maxPen = this.bladeLen * 0.97;
+    if (this.knifeShort) this.knifeShort.visible = kind === "short";
+    if (this.knifeLong) this.knifeLong.visible = kind === "long";
+    this.knife = kind === "long" ? this.knifeLong : this.knifeShort;
+    if (this.hasEntry) {
+      this.rawPen = THREE.MathUtils.clamp(this.rawPen, -HOVER, this.maxPen);
+      this.handle.copy(this.entry).addScaledVector(this.dir, -(this.totalLen - this.rawPen));
+      this.layout();
+      this.updateContact();
+    }
   }
 
   private loadWoundAtlas() {
@@ -107,7 +171,7 @@ export class BayonetPlay {
     img.src = "/textures/wounds.png";
   }
 
-  pick(point: THREE.Vector3, normal: THREE.Vector3) {
+  pick(point: THREE.Vector3, normal: THREE.Vector3, mesh?: THREE.Mesh, faceIndex?: number) {
     this.hasEntry = true;
     this.punctured = false;
     this.punctureEvent = false;
@@ -124,7 +188,9 @@ export class BayonetPlay {
     if (this.entryNormal.lengthSq() < 1e-6) this.entryNormal.set(0, 0, 1);
     this.restAxis.copy(this.entryNormal).multiplyScalar(-1);
     this.dir.copy(this.restAxis);
-    const dist = this.bladeLen - this.rawPen;
+    this.skinHit = mesh ?? null;
+    this.skinFace = faceIndex ?? -1;
+    const dist = this.totalLen - this.rawPen;
     this.handle.copy(this.entry).addScaledVector(this.dir, -dist);
     this.layout();
     this.updateContact();
@@ -164,15 +230,15 @@ export class BayonetPlay {
     _v.normalize();
     clampDirToCone(_v, this.restAxis, MAX_CONE);
     this.dir.copy(_v);
-    const intended = this.bladeLen - len;
+    const intended = this.totalLen - len;
     if (!this.punctured && intended >= SQUEEZE_MAX * 0.92) {
       this.punctured = true;
       this.punctureEvent = true;
       this.spawnWound();
     }
-    const maxPen = this.punctured ? MAX_PEN : SQUEEZE_MAX;
-    const minDist = Math.max(0.04, this.bladeLen - maxPen);
-    const maxDist = this.bladeLen + HOVER + 0.08;
+    const maxPen = this.punctured ? this.maxPen : SQUEEZE_MAX;
+    const minDist = Math.max(0.04, this.totalLen - maxPen);
+    const maxDist = this.totalLen + HOVER + 0.08;
     const d = THREE.MathUtils.clamp(len, minDist, maxDist);
     this.handle.copy(this.entry).addScaledVector(this.dir, -d);
     this.layout();
@@ -180,21 +246,20 @@ export class BayonetPlay {
   }
 
   pen01() {
-    return THREE.MathUtils.clamp((this.rawPen + HOVER) / (MAX_PEN + HOVER), 0, 1);
+    return THREE.MathUtils.clamp((this.rawPen + HOVER) / (this.maxPen + HOVER), 0, 1);
   }
 
   setPen01(t: number) {
     if (!this.hasEntry) return;
     const u = THREE.MathUtils.clamp(t, 0, 1);
-    this.rawPen = -HOVER + u * (MAX_PEN + HOVER);
-    const dist = this.bladeLen - this.rawPen;
-    this.handle.copy(this.entry).addScaledVector(this.dir, -dist);
+    this.rawPen = -HOVER + u * (this.maxPen + HOVER);
+    this.handle.copy(this.entry).addScaledVector(this.dir, -(this.totalLen - this.rawPen));
     this.layout();
     this.updateContact();
   }
 
   setRawPen(pen: number) {
-    this.setPen01((THREE.MathUtils.clamp(pen, -HOVER, MAX_PEN) + HOVER) / (MAX_PEN + HOVER));
+    this.setPen01((THREE.MathUtils.clamp(pen, -HOVER, this.maxPen) + HOVER) / (this.maxPen + HOVER));
   }
 
   adjustDepth(delta01: number) {
@@ -214,15 +279,18 @@ export class BayonetPlay {
     this.releaseEntry();
     this.autoReleased = false;
     this.pumpT = 0;
+    this.clearWounds();
+  }
+
+  private clearWounds() {
+    this.patches = [];
     while (this.wounds.children.length) {
       const ch = this.wounds.children[0]!;
       this.wounds.remove(ch);
       const mesh = ch as THREE.Mesh;
       mesh.geometry?.dispose();
       const mat = mesh.material;
-      if (mat && !Array.isArray(mat)) {
-        (mat as THREE.Material).dispose();
-      }
+      if (mat && !Array.isArray(mat)) (mat as THREE.Material).dispose();
     }
   }
 
@@ -299,7 +367,7 @@ export class BayonetPlay {
 
   private updateContact() {
     const dist = this.handle.distanceTo(this.entry);
-    this.rawPen = this.bladeLen - dist;
+    this.rawPen = this.totalLen - dist;
     this.squeeze = THREE.MathUtils.clamp(this.rawPen / SQUEEZE_MAX, 0, 1);
     if (!this.punctured && this.rawPen >= SQUEEZE_MAX * 0.92) {
       this.punctured = true;
@@ -310,7 +378,7 @@ export class BayonetPlay {
   }
 
   private layout() {
-    this.tip.copy(this.handle).addScaledVector(this.dir, this.bladeLen);
+    this.tip.copy(this.handle).addScaledVector(this.dir, this.totalLen);
     if (this.knife) {
       this.knife.position.copy(this.handle);
       this.orientBladeDown();
@@ -340,55 +408,124 @@ export class BayonetPlay {
   }
 
   private layoutWounds() {
-    for (const obj of this.wounds.children) {
-      const mesh = obj as THREE.Mesh;
-      const entry = mesh.userData.entry as THREE.Vector3 | undefined;
-      const normal = mesh.userData.normal as THREE.Vector3 | undefined;
-      if (!entry || !normal) continue;
-      mesh.position.copy(entry).addScaledVector(normal, 0.0016);
-      _look.copy(mesh.position).add(normal);
-      mesh.lookAt(_look);
-      mesh.rotateZ((mesh.userData.twist as number) ?? 0);
+    this.syncWounds(this.xrayValue);
+  }
+
+  syncWounds(xray: number) {
+    this.xrayValue = xray;
+    for (const patch of this.patches) {
+      const src = patch.src.array as Float32Array;
+      const dst = patch.pos.array as Float32Array;
+      for (let i = 0; i < patch.map.length; i++) {
+        const s = patch.map[i]! * 3;
+        const d = i * 3;
+        dst[d] = src[s]!;
+        dst[d + 1] = src[s + 1]!;
+        dst[d + 2] = src[s + 2]!;
+      }
+      patch.pos.needsUpdate = true;
+      const shader = (patch.mesh.material as THREE.Material).userData.shader as
+        | { uniforms?: { uXray?: { value: number } } }
+        | undefined;
+      if (shader?.uniforms?.uXray) shader.uniforms.uXray.value = xray;
     }
   }
 
   private spawnWound() {
+    const host = this.skinHit ?? nearestSkin(this.skinMeshes, this.entry);
+    if (!host) return;
+    const srcPos = host.geometry.getAttribute("position") as THREE.BufferAttribute | undefined;
+    if (!srcPos || !(srcPos.array instanceof Float32Array)) return;
+    const patch = buildSkinPatch(host, this.entry, this.entryNormal, this.dir, this.skinFace);
+    if (!patch) return;
+
     const tile = (Math.random() * 4) | 0;
     const col = tile & 1;
     const row = tile >> 1;
-    const u0 = col * 0.5 + 0.018;
-    const v0 = (1 - row) * 0.5 + 0.018;
-    const uSpan = 0.464;
-    const vSpan = 0.464;
-    const geo = new THREE.PlaneGeometry(0.05, 0.082);
-    const uv = geo.getAttribute("uv") as THREE.BufferAttribute;
+    const u0 = col * 0.5 + 0.02;
+    const v0 = (1 - row) * 0.5 + 0.02;
+    const uSpan = 0.46;
+    const vSpan = 0.46;
+    const twist = (Math.random() - 0.5) * 0.5;
+    const cs = Math.cos(twist);
+    const sn = Math.sin(twist);
+    const uv = patch.geo.getAttribute("uv") as THREE.BufferAttribute;
     for (let i = 0; i < uv.count; i++) {
-      uv.setXY(i, u0 + uv.getX(i) * uSpan, v0 + uv.getY(i) * vSpan);
+      const lx = uv.getX(i);
+      const ly = uv.getY(i);
+      uv.setXY(i, lx * cs - ly * sn + 0.5, lx * sn + ly * cs + 0.5);
     }
     uv.needsUpdate = true;
+
     const mat = new THREE.MeshBasicMaterial({
       map: this.woundTex,
-      color: this.woundTex ? "#ffd8d0" : "#b42318",
+      color: this.woundTex ? "#ffd4cc" : "#b42318",
       transparent: true,
       opacity: 1,
       depthWrite: false,
       depthTest: true,
       polygonOffset: true,
-      polygonOffsetFactor: -6,
-      polygonOffsetUnits: -6,
+      polygonOffsetFactor: -8,
+      polygonOffsetUnits: -8,
       toneMapped: false,
-      side: THREE.DoubleSide,
+      side: THREE.FrontSide,
     });
-    const mesh = new THREE.Mesh(geo, mat);
-    mesh.userData.twist = (Math.random() - 0.5) * 0.55;
-    mesh.userData.entry = this.entry.clone();
-    mesh.userData.normal = this.entryNormal.clone();
-    mesh.userData.dir = this.dir.clone();
+    const { y0, y1, xMax, zFront } = this.xray;
+    mat.onBeforeCompile = (shader) => {
+      shader.uniforms.uXray = { value: this.xrayValue };
+      shader.uniforms.uY0 = { value: y0 };
+      shader.uniforms.uY1 = { value: y1 };
+      shader.uniforms.uXMax = { value: xMax };
+      shader.uniforms.uZFront = { value: zFront };
+      shader.uniforms.uTile = { value: new THREE.Vector4(u0, v0, uSpan, vSpan) };
+      shader.vertexShader = shader.vertexShader
+        .replace("#include <common>", "#include <common>\nvarying vec3 vBodyW;")
+        .replace(
+          "#include <begin_vertex>",
+          "#include <begin_vertex>\nvBodyW = (modelMatrix * vec4(transformed, 1.0)).xyz;",
+        );
+      shader.fragmentShader = shader.fragmentShader
+        .replace(
+          "#include <common>",
+          `#include <common>
+uniform float uXray; uniform float uY0; uniform float uY1; uniform float uXMax; uniform float uZFront;
+uniform vec4 uTile;
+varying vec3 vBodyW;
+float xrayHole() {
+  float band = smoothstep(uY0, uY0 + 0.08, vBodyW.y) * (1.0 - smoothstep(uY1 - 0.08, uY1, vBodyW.y));
+  float torso = 1.0 - smoothstep(uXMax * 0.65, uXMax + 0.1, abs(vBodyW.x));
+  float front = smoothstep(uZFront - 0.16, uZFront + 0.04, vBodyW.z);
+  return clamp(band * torso * front * uXray, 0.0, 1.0);
+}`,
+        )
+        .replace(
+          "#include <map_fragment>",
+          `#ifdef USE_MAP
+           if (vMapUv.x < 0.0 || vMapUv.x > 1.0 || vMapUv.y < 0.0 || vMapUv.y > 1.0) discard;
+           vec4 sampledDiffuseColor = texture2D(map, uTile.xy + vMapUv * uTile.zw);
+           if (sampledDiffuseColor.a < 0.08) discard;
+           diffuseColor *= sampledDiffuseColor;
+           #endif`,
+        )
+        .replace(
+          "#include <dithering_fragment>",
+          `if (!gl_FrontFacing) discard;
+           float hole = xrayHole();
+           gl_FragColor.a *= mix(1.0, 0.06, pow(hole, 0.68));
+           if (gl_FragColor.a < 0.04) discard;
+           #include <dithering_fragment>`,
+        );
+      mat.userData.shader = shader;
+    };
+    mat.needsUpdate = true;
+
+    const mesh = new THREE.Mesh(patch.geo, mat);
     mesh.frustumCulled = false;
-    mesh.renderOrder = 18;
+    mesh.renderOrder = 8;
     mesh.raycast = () => {};
     this.wounds.add(mesh);
-    this.layoutWounds();
+    this.patches.push({ mesh, src: srcPos, map: patch.map, pos: patch.pos });
+    this.syncWounds(this.xrayValue);
   }
 
   private deformGuts(gut = 1) {
@@ -452,6 +589,98 @@ export class BayonetPlay {
   }
 }
 
+function nearestSkin(meshes: THREE.Mesh[], point: THREE.Vector3) {
+  let best: THREE.Mesh | null = null;
+  let bestD = 1e9;
+  for (const mesh of meshes) {
+    const pos = mesh.geometry.getAttribute("position") as THREE.BufferAttribute | undefined;
+    if (!pos) continue;
+    const arr = pos.array as Float32Array;
+    const step = Math.max(1, Math.floor(pos.count / 4000));
+    for (let i = 0; i < pos.count; i += step) {
+      const dx = arr[i * 3]! - point.x;
+      const dy = arr[i * 3 + 1]! - point.y;
+      const dz = arr[i * 3 + 2]! - point.z;
+      const d = dx * dx + dy * dy + dz * dz;
+      if (d < bestD) {
+        bestD = d;
+        best = mesh;
+      }
+    }
+  }
+  return best;
+}
+
+function buildSkinPatch(
+  mesh: THREE.Mesh,
+  center: THREE.Vector3,
+  normal: THREE.Vector3,
+  dir: THREE.Vector3,
+  faceIndex: number,
+) {
+  const geo = mesh.geometry as THREE.BufferGeometry;
+  const pos = geo.getAttribute("position") as THREE.BufferAttribute;
+  const arr = pos.array as Float32Array;
+  const index = geo.getIndex();
+  const triCount = index ? index.count / 3 : Math.floor(pos.count / 3);
+  const r2 = 0.046 * 0.046;
+  const faces: number[] = [];
+  const vertAt = (f: number, k: number) => {
+    if (index) return index.getX(f * 3 + k);
+    return f * 3 + k;
+  };
+  const near = (vi: number) => {
+    const d0 = arr[vi * 3]! - center.x;
+    const d1 = arr[vi * 3 + 1]! - center.y;
+    const d2 = arr[vi * 3 + 2]! - center.z;
+    return d0 * d0 + d1 * d1 + d2 * d2 <= r2;
+  };
+  if (faceIndex >= 0 && faceIndex < triCount) faces.push(faceIndex);
+  for (let f = 0; f < triCount; f++) {
+    if (f === faceIndex) continue;
+    if (near(vertAt(f, 0)) || near(vertAt(f, 1)) || near(vertAt(f, 2))) faces.push(f);
+  }
+  if (faces.length < 1) return null;
+
+  const remap = new Map<number, number>();
+  const map: number[] = [];
+  const positions: number[] = [];
+  const uvs: number[] = [];
+  _t.crossVectors(normal, dir);
+  if (_t.lengthSq() < 1e-8) _t.crossVectors(normal, _down);
+  if (_t.lengthSq() < 1e-8) _t.set(1, 0, 0);
+  _t.normalize();
+  _b.crossVectors(normal, _t).normalize();
+  const take = (vi: number) => {
+    let id = remap.get(vi);
+    if (id !== undefined) return id;
+    id = map.length;
+    remap.set(vi, id);
+    map.push(vi);
+    const x = arr[vi * 3]!;
+    const y = arr[vi * 3 + 1]!;
+    const z = arr[vi * 3 + 2]!;
+    positions.push(x, y, z);
+    const dx = x - center.x;
+    const dy = y - center.y;
+    const dz = z - center.z;
+    uvs.push((dx * _t.x + dy * _t.y + dz * _t.z) / 0.052, (dx * _b.x + dy * _b.y + dz * _b.z) / 0.084);
+    return id;
+  };
+  const idx: number[] = [];
+  for (const f of faces) {
+    idx.push(take(vertAt(f, 0)), take(vertAt(f, 1)), take(vertAt(f, 2)));
+  }
+  const out = new THREE.BufferGeometry();
+  const posAttr = new THREE.BufferAttribute(new Float32Array(positions), 3);
+  posAttr.setUsage(THREE.DynamicDrawUsage);
+  out.setAttribute("position", posAttr);
+  out.setAttribute("uv", new THREE.BufferAttribute(new Float32Array(uvs), 2));
+  out.setIndex(idx);
+  out.computeVertexNormals();
+  return { geo: out, map: new Int32Array(map), pos: posAttr };
+}
+
 function clampDirToCone(dir: THREE.Vector3, axis: THREE.Vector3, maxAng: number) {
   _side.copy(axis).normalize();
   dir.normalize();
@@ -469,7 +698,7 @@ function clampDirToCone(dir: THREE.Vector3, axis: THREE.Vector3, maxAng: number)
   return dir;
 }
 
-function prepareBayonet(src: THREE.Object3D) {
+function prepareBayonet(src: THREE.Object3D, totalLen: number) {
   const holder = new THREE.Group();
   const clone = src.clone(true);
   clone.updateMatrixWorld(true);
@@ -479,7 +708,7 @@ function prepareBayonet(src: THREE.Object3D) {
     if (m.isMesh && m.geometry && !srcMesh) srcMesh = m;
   });
   if (!srcMesh) {
-    return { root: holder, len: BLADE_LEN };
+    return { root: holder, totalLen, bladeLen: totalLen * 0.62 };
   }
   const srcM = srcMesh as THREE.Mesh;
   srcM.updateWorldMatrix(true, false);
@@ -514,33 +743,17 @@ function prepareBayonet(src: THREE.Object3D) {
   const maxA = axis === 0 ? maxX : axis === 1 ? maxY : maxZ;
   const span = Math.max(1e-4, maxA - minA);
 
-  const thick = (end: "lo" | "hi") => {
-    const lo = end === "lo" ? minA : maxA - span * 0.12;
-    const hi = end === "lo" ? minA + span * 0.12 : maxA;
-    let r = 0;
+  const dens = (end: "lo" | "hi") => {
+    const lo = end === "lo" ? minA : maxA - span * 0.18;
+    const hi = end === "lo" ? minA + span * 0.18 : maxA;
     let n = 0;
-    const cx = (minX + maxX) * 0.5;
-    const cy = (minY + maxY) * 0.5;
-    const cz = (minZ + maxZ) * 0.5;
     for (let i = 0; i < count; i++) {
-      const x = arr[i * 3]!;
-      const y = arr[i * 3 + 1]!;
-      const z = arr[i * 3 + 2]!;
-      const a = axis === 0 ? x : axis === 1 ? y : z;
-      if (a < lo || a > hi) continue;
-      const d =
-        axis === 0
-          ? Math.hypot(y - cy, z - cz)
-          : axis === 1
-            ? Math.hypot(x - cx, z - cz)
-            : Math.hypot(x - cx, y - cy);
-      r += d;
-      n++;
+      const a = axis === 0 ? arr[i * 3]! : axis === 1 ? arr[i * 3 + 1]! : arr[i * 3 + 2]!;
+      if (a >= lo && a <= hi) n++;
     }
-    return n > 0 ? r / n : 1;
+    return n;
   };
-  // Thinner end is the blade tip; grip/pommel is thicker.
-  const tipAtMax = thick("hi") <= thick("lo");
+  const tipAtMax = dens("hi") < dens("lo");
   const tipA = tipAtMax ? maxA : minA;
   const hdlA = tipAtMax ? minA : maxA;
   const mid = (t: number) => {
@@ -574,12 +787,12 @@ function prepareBayonet(src: THREE.Object3D) {
   if (_v.lengthSq() < 1e-10) _v.set(0, 1, 0);
   _q.setFromUnitVectors(_v.normalize(), _axisY);
   const rawLen = tip.distanceTo(hdl) || span;
-  const scl = BLADE_LEN / rawLen;
+  const scl = totalLen / rawLen;
   for (let i = 0; i < count; i++) {
     _v.set(arr[i * 3]! - hdl.x, arr[i * 3 + 1]! - hdl.y, arr[i * 3 + 2]! - hdl.z);
     _v.applyQuaternion(_q).multiplyScalar(scl);
     arr[i * 3] = _v.x;
-    arr[i * 3 + 1] = BLADE_LEN - _v.y;
+    arr[i * 3 + 1] = _v.y;
     arr[i * 3 + 2] = _v.z;
   }
   const nrm = geo.getAttribute("normal") as THREE.BufferAttribute | undefined;
@@ -587,7 +800,6 @@ function prepareBayonet(src: THREE.Object3D) {
     const na = nrm.array as Float32Array;
     for (let i = 0; i < nrm.count; i++) {
       _v.set(na[i * 3]!, na[i * 3 + 1]!, na[i * 3 + 2]!).applyQuaternion(_q);
-      _v.y = -_v.y;
       _v.normalize();
       na[i * 3] = _v.x;
       na[i * 3 + 1] = _v.y;
@@ -618,5 +830,36 @@ function prepareBayonet(src: THREE.Object3D) {
   mesh.renderOrder = 8;
   mesh.name = "bayonet";
   holder.add(mesh);
-  return { root: holder, len: BLADE_LEN };
+  return { root: holder, totalLen, bladeLen: detectBladeLen(arr, count, totalLen) };
 }
+
+function detectBladeLen(arr: Float32Array, count: number, totalLen: number) {
+  const bins = 40;
+  const ext = new Float32Array(bins);
+  const ns = new Int32Array(bins);
+  for (let i = 0; i < count; i++) {
+    const y = arr[i * 3 + 1]!;
+    const b = Math.min(bins - 1, Math.max(0, Math.floor((y / Math.max(1e-4, totalLen)) * bins)));
+    const r = Math.hypot(arr[i * 3]!, arr[i * 3 + 2]!);
+    if (r > ext[b]!) ext[b] = r;
+    ns[b]!++;
+  }
+  const samples: number[] = [];
+  for (let i = bins - 1; i >= Math.floor(bins * 0.55); i--) {
+    if (ns[i]! > 3) samples.push(ext[i]!);
+  }
+  samples.sort((a, b) => a - b);
+  const bladeExt = samples.length ? samples[samples.length >> 1]! : 0.012;
+  let guardBin = Math.floor(bins * 0.38);
+  for (let i = bins - 2; i >= 2; i--) {
+    if (ns[i]! < 3) continue;
+    if (ext[i]! > bladeExt * 1.7 && ext[i]! > bladeExt + 0.005) {
+      guardBin = i;
+      break;
+    }
+  }
+  const guardY = ((guardBin + 0.2) / bins) * totalLen;
+  const bladeLen = totalLen - guardY;
+  return THREE.MathUtils.clamp(bladeLen, totalLen * 0.48, totalLen * 0.84);
+}
+
