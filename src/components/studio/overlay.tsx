@@ -110,6 +110,9 @@ export function Overlay() {
   const fistThrustStart = useStudio((s) => s.fistThrustStart);
   const fistStirSpeed = useStudio((s) => s.fistStirSpeed);
   const fistStirRadius = useStudio((s) => s.fistStirRadius);
+  const bayonetHasEntry = useStudio((s) => s.bayonetHasEntry);
+  const bayonetPen = useStudio((s) => s.bayonetPen);
+  const setBayonetPen = useStudio((s) => s.setBayonetPen);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -119,8 +122,10 @@ export function Overlay() {
       if (e.key === "b" || e.key === "B") setParam("breathing", !useStudio.getState().breathing);
       if (e.key === "h" || e.key === "H") setParam("uiHidden", !useStudio.getState().uiHidden);
       if (e.key === "t" || e.key === "T") {
+        const order = ["drag", "pose", "strike", "fist", "bayonet"] as const;
         const cur = useStudio.getState().interactMode;
-        setInteractMode(cur === "drag" ? "pose" : cur === "pose" ? "strike" : cur === "strike" ? "fist" : "drag");
+        const i = order.indexOf(cur);
+        setInteractMode(order[(i + 1) % order.length]!);
       }
       if (e.key === "x" || e.key === "X") {
         const cur = useStudio.getState().abdomenXray;
@@ -419,7 +424,7 @@ export function Overlay() {
           {panel === "interact" ? (
             <>
               <p className="mb-3 text-xs leading-relaxed text-muted">
-                左键点身体操作。拖拽捏软组织，姿势拉关节，击腹点击释放环状冲击，拳交拖动手臂沿大肠插入。
+                左键点身体操作。拖拽捏软组织，姿势拉关节，击腹点击释放环状冲击，拳交拖动手臂沿大肠插入，刺刀先点腹壁再拖角度，滚轮控制深度。
               </p>
               <div className="grid grid-cols-2 gap-2">
                 <button
@@ -473,6 +478,19 @@ export function Overlay() {
                 >
                   <Grab className="size-4" />
                   拳交
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setInteractMode("bayonet")}
+                  className={cn(
+                    "col-span-2 inline-flex h-11 items-center justify-center gap-1.5 rounded-md text-sm font-medium transition-colors duration-fast",
+                    interactMode === "bayonet"
+                      ? "bg-accent text-accent-fg"
+                      : "border border-border bg-surface-2 text-muted hover:text-fg",
+                  )}
+                >
+                  <Sword className="size-4" />
+                  刺刀
                 </button>
               </div>
 
@@ -605,6 +623,40 @@ export function Overlay() {
                 </div>
               ) : null}
 
+              {interactMode === "bayonet" ? (
+                <div className="mt-3">
+                  <p className="text-xs leading-relaxed text-muted">
+                    {bayonetHasEntry
+                      ? "已锁定刺入点。拖动在垂直±30°锥内改变刺入角度，滚轮调节深度。贴上皮肤会先挤压，再刺入。"
+                      : "先点击腹壁选择刺入点，刺刀会垂直对准该点出现在体外。"}
+                  </p>
+                  {bayonetHasEntry ? (
+                    <label className="mt-3 block">
+                      <span className="mb-1.5 flex items-center justify-between text-xs text-muted">
+                        <span>刺入深度</span>
+                        <span className="tabular-nums text-fg">{bayonetPen.toFixed(2)}</span>
+                      </span>
+                      <Slider.Root
+                        value={[bayonetPen]}
+                        min={0}
+                        max={1}
+                        step={0.01}
+                        onValueChange={(v) => {
+                          const n = v[0];
+                          if (typeof n === "number") setBayonetPen(n);
+                        }}
+                        className="relative flex h-5 w-full touch-none items-center"
+                      >
+                        <Slider.Track className="relative h-1 grow rounded-full bg-surface-2">
+                          <Slider.Range className="absolute h-full rounded-full bg-accent" />
+                        </Slider.Track>
+                        <Slider.Thumb className="block size-3.5 rounded-full bg-fg shadow-sm outline-none ring-2 ring-transparent focus-visible:ring-accent" />
+                      </Slider.Root>
+                    </label>
+                  ) : null}
+                </div>
+              ) : null}
+
               {interactMode === "strike" ? (
                 <div className="mt-3">
                   <p className="mb-1.5 text-xs text-muted">力度档位</p>
@@ -713,12 +765,18 @@ export function Overlay() {
                 {grabbing
                   ? interactMode === "pose"
                     ? "调姿中"
-                    : "拖拽中"
+                    : interactMode === "bayonet"
+                      ? "拖刀中"
+                      : "拖拽中"
                   : interactMode === "strike"
                     ? "击腹就绪"
                     : interactMode === "fist"
                       ? "拳交：拖动手臂插入"
-                      : "待机"}
+                      : interactMode === "bayonet"
+                        ? bayonetHasEntry
+                          ? "刺刀：拖动刺入"
+                          : "刺刀：点击选择刺入点"
+                        : "待机"}
               </p>
             </>
           ) : null}
@@ -733,9 +791,24 @@ export function Overlay() {
 
           {panel === "weapons" ? (
             <div className="flex flex-col gap-3">
-              <p className="text-xs text-muted">装备栏空</p>
+              <p className="text-xs leading-relaxed text-muted">
+                选择刺刀后，点击腹壁确定刺入点。拖动改变刺入角度（垂直±30°），滚轮或滑条控制深度。
+              </p>
               <div className="grid grid-cols-3 gap-2">
-                {Array.from({ length: 6 }, (_, i) => (
+                <button
+                  type="button"
+                  onClick={() => setInteractMode(interactMode === "bayonet" ? "drag" : "bayonet")}
+                  className={cn(
+                    "flex aspect-square flex-col items-center justify-center gap-1 rounded-md border text-[11px] font-medium",
+                    interactMode === "bayonet"
+                      ? "border-accent bg-accent text-accent-fg"
+                      : "border-border bg-surface-2 text-muted hover:text-fg",
+                  )}
+                >
+                  <Sword className="size-5" />
+                  刺刀
+                </button>
+                {Array.from({ length: 5 }, (_, i) => (
                   <div
                     key={i}
                     className="flex aspect-square items-center justify-center rounded-md border border-dashed border-border bg-surface-2/50 text-muted"
@@ -744,7 +817,13 @@ export function Overlay() {
                   </div>
                 ))}
               </div>
-              <p className="text-xs text-muted">武器系统稍后加入</p>
+              {interactMode === "bayonet" ? (
+                <p className="text-xs text-muted">
+                  {bayonetHasEntry ? "刺入点已锁定。拖动改角度，滚轮调深度。" : "装备中 · 点击腹壁选择刺入点。"}
+                </p>
+              ) : (
+                <p className="text-xs text-muted">点击刺刀装备。</p>
+              )}
             </div>
           ) : null}
         </div>
@@ -759,11 +838,13 @@ export function Overlay() {
               ? "击腹"
               : interactMode === "fist"
                 ? "拳交"
-                : "拖拽"}
+                : interactMode === "bayonet"
+                  ? "刺刀"
+                  : "拖拽"}
         </span>
         <span className="text-border">/</span>
         <Activity className="size-3.5" />
-        <span>右键旋转 · 左键点身体操作 · T 拖拽/姿势 · X 透视 · K 骨骼 · W 绑定</span>
+        <span>右键旋转 · 左键点身体操作 · T 切换互动 · 刺刀滚轮调深度 · X 透视</span>
       </div>
         </>
       )}

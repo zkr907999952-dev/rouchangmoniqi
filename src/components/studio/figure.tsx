@@ -8,12 +8,14 @@ import { GutPeristalsis } from "@/lib/softbody/peristalsis";
 import { BellyStrike } from "@/lib/softbody/belly-strike";
 import { GutHealth } from "@/lib/softbody/gut-health";
 import { FistPlay } from "@/lib/softbody/fist-play";
+import { BayonetPlay } from "@/lib/softbody/bayonet-play";
 import { useStudio } from "@/lib/studio-store";
 
 const _hit = new THREE.Vector3();
 const _normal = new THREE.Vector3();
 const _target = new THREE.Vector3();
 const _camDir = new THREE.Vector3();
+const _n = new THREE.Vector3();
 const _plane = new THREE.Plane();
 const _ray = new THREE.Ray();
 const _ndc = new THREE.Vector2();
@@ -31,6 +33,7 @@ type FigureProps = {
   intestines: THREE.Object3D;
   pelvis: THREE.Object3D;
   arm: THREE.Object3D;
+  bayonet: THREE.Object3D;
 };
 
 function meshKey(mesh: THREE.Object3D) {
@@ -1033,13 +1036,14 @@ function attachXray(
   return overlay;
 }
 
-export function Figure({ controlsRef, character, intestines, pelvis, arm }: FigureProps) {
+export function Figure({ controlsRef, character, intestines, pelvis, arm, bayonet }: FigureProps) {
   return (
     <FittedFigure
       character={character}
       intestines={intestines}
       pelvis={pelvis}
       arm={arm}
+      bayonet={bayonet}
       controlsRef={controlsRef}
     />
   );
@@ -1050,12 +1054,14 @@ function FittedFigure({
   intestines,
   pelvis,
   arm,
+  bayonet,
   controlsRef,
 }: {
   character: THREE.Object3D;
   intestines: THREE.Object3D;
   pelvis: THREE.Object3D;
   arm: THREE.Object3D;
+  bayonet: THREE.Object3D;
   controlsRef: RefObject<OrbitControlsImpl | null>;
 }) {
   const pokeRef = useRef<THREE.Mesh>(null);
@@ -1069,7 +1075,7 @@ function FittedFigure({
   const poseRef = useRef(useStudio.getState().pose);
   const grab = useRef<{
     active: boolean;
-    mode: "pose" | "drag" | "fist";
+    mode: "pose" | "drag" | "fist" | "bayonet";
     origin: THREE.Vector3;
     planePoint: THREE.Vector3;
     normal: THREE.Vector3;
@@ -1079,12 +1085,14 @@ function FittedFigure({
   const gutExc = useRef(0);
   const lastAz = useRef<number | null>(null);
   const lastPol = useRef<number | null>(null);
+  const bayonetPenRef = useRef(0);
   const { camera, gl, raycaster, pointer } = useThree();
 
   const setup = useMemo(() => {
     const xrayList: THREE.Material[] = [];
     const xrayOverlays: THREE.Mesh[] = [];
     const xrayHosts: THREE.Mesh[] = [];
+    const torsoMeshes: THREE.Mesh[] = [];
     const root = new THREE.Group();
     const fitted = fitStanding(character, 1.66);
     const body = flattenToWorld(fitted);
@@ -1184,6 +1192,7 @@ function FittedFigure({
       }
       bindMesh(mesh);
       if (isTorsoMesh(mesh)) {
+        torsoMeshes.push(mesh);
         const overlay = attachXray(mesh, yX0, yX1, 0.12, skinZ - 0.01, xrayList, xrayOverlays);
         if (overlay) xrayHosts.push(mesh);
       }
@@ -1206,6 +1215,10 @@ function FittedFigure({
     fist.setEnvelope(crotch.y + 0.012, navel.y + 0.108, waistProfile);
     fist.setMid(navel);
     root.add(fist.root);
+    const knife = new BayonetPlay();
+    knife.attach(bayonet, peristalsis.getTubes());
+    root.add(knife.root);
+    root.add(knife.wounds);
     pelvic.traverse((obj) => {
       const mesh = obj as THREE.Mesh;
       if (mesh.isMesh) bindMesh(mesh, "organs");
@@ -1259,6 +1272,7 @@ function FittedFigure({
         navel: navel.toArray(),
         crotch: crotch.toArray(),
         anus: anus.toArray(),
+        bayonet: { hasEntry: false, punctured: false, penetration: 0, squeeze: 0 },
         uterus: uterusNow
           ? [(uterusNow.min.x + uterusNow.max.x) * 0.5, (uterusNow.min.y + uterusNow.max.y) * 0.5, (uterusNow.min.z + uterusNow.max.z) * 0.5]
           : [0, yNavel - 0.1, 0],
@@ -1287,6 +1301,8 @@ function FittedFigure({
       strike,
       gutHealth,
       fist,
+      knife,
+      torsoMeshes,
       navel,
       boundGeos,
       bellyLight,
@@ -1296,7 +1312,7 @@ function FittedFigure({
       boneLines,
       jointBuf,
     };
-  }, [character, intestines, pelvis, arm]);
+  }, [character, intestines, pelvis, arm, bayonet]);
 
   useEffect(() => {
     const id = requestAnimationFrame(() => {
@@ -1309,6 +1325,22 @@ function FittedFigure({
     });
     return () => cancelAnimationFrame(id);
   }, []);
+
+  useEffect(() => {
+    const el = gl.domElement;
+    const onWheel = (e: WheelEvent) => {
+      const s = useStudio.getState();
+      if (s.interactMode !== "bayonet" || !setup.knife.hasEntry) return;
+      e.preventDefault();
+      e.stopPropagation();
+      const notches = THREE.MathUtils.clamp(e.deltaY, -180, 180) / 120;
+      const next = setup.knife.adjustDepth(notches * 0.055);
+      bayonetPenRef.current = next;
+      s.setBayonetPen(next);
+    };
+    el.addEventListener("wheel", onWheel, { passive: false, capture: true });
+    return () => el.removeEventListener("wheel", onWheel, true);
+  }, [gl, setup]);
 
   useEffect(() => {
     if (controlsRef.current) {
@@ -1357,6 +1389,10 @@ function FittedFigure({
       setup.skeleton.reset();
       setup.gutHealth.reset();
       setup.fist.reset();
+      setup.knife.reset();
+      bayonetPenRef.current = 0;
+      useStudio.getState().setBayonetHasEntry(false);
+      useStudio.getState().setBayonetPen(0);
       gutExc.current = 0;
     }
     if (s.strikeNonce !== lastStrike.current) {
@@ -1408,6 +1444,13 @@ function FittedFigure({
           setup.fist.dragTo(o, _target);
           grab.current.origin.copy(_target);
           grab.current.planePoint.copy(_target);
+        } else if (grab.current.mode === "bayonet") {
+          _plane.setFromNormalAndCoplanarPoint(_camDir, setup.knife.handle);
+          if (_ray.intersectPlane(_plane, _target)) {
+            setup.knife.dragTo(_target);
+            grab.current.origin.copy(setup.knife.handle);
+            grab.current.planePoint.copy(setup.knife.handle);
+          }
         } else if (grab.current.mode === "pose") {
           setup.skeleton.setPoseDrag(bone, o.x, o.y, o.z, _target.x, _target.y, _target.z);
         } else {
@@ -1422,6 +1465,24 @@ function FittedFigure({
 
     setup.fist.setEnabled(s.interactMode === "fist");
     setup.fist.setMaxScale(s.fistMaxDepth);
+    setup.knife.setEnabled(s.interactMode === "bayonet");
+    if (controlsRef.current) {
+      controlsRef.current.enableZoom = !(s.interactMode === "bayonet" && setup.knife.hasEntry);
+    }
+    if (s.interactMode === "bayonet" && setup.knife.hasEntry) {
+      if (Math.abs(s.bayonetPen - bayonetPenRef.current) > 1e-4) {
+        bayonetPenRef.current = s.bayonetPen;
+        setup.knife.setPen01(s.bayonetPen);
+      }
+    }
+    if (s.interactMode === "bayonet") {
+      const sq = setup.knife.squeezeTarget();
+      if (sq && grab.current?.mode !== "pose" && grab.current?.mode !== "drag") {
+        setup.skeleton.setTissueDrag(sq.gx, sq.gy, sq.gz, sq.tx, sq.ty, sq.tz, sq.radius);
+      } else if (!sq && grab.current?.mode !== "pose" && grab.current?.mode !== "drag") {
+        setup.skeleton.clearHold();
+      }
+    }
     const autoFist = s.fistThrust || s.fistStir;
     setup.fist.step(dt, {
       thrust: s.fistThrust,
@@ -1466,6 +1527,24 @@ function FittedFigure({
     setup.strike.step(dt);
     setup.strike.apply(s.strikeRebound);
     setup.fist.apply(s.fistGut, autoFist);
+    setup.knife.apply(dt, s.fistGut, setup.gutHealth);
+    if (setup.knife.consumePunctureEvent()) {
+      const e = setup.knife.entry;
+      const ddir = setup.knife.dir;
+      setup.skeleton.impulse(e.x, e.y, e.z, 0.42, 0.28);
+      for (let i = 1; i <= 5; i++) {
+        const t = (setup.knife.penetration * i) / 5;
+        setup.gutHealth.hit(e.x + ddir.x * t, e.y + ddir.y * t, e.z + ddir.z * t, 0.38, 0.32);
+      }
+      gutExc.current = Math.min(0.35, gutExc.current + 0.12);
+      if (!s.showOrgans || s.abdomenXray < 0.08) {
+        useStudio.setState({
+          showOrgans: true,
+          abdomenXray: Math.max(0.38, s.abdomenXray),
+          showGutHp: true,
+        });
+      }
+    }
     setup.gutHealth.applyColor();
     setup.gutHealth.updateBars(camera, s.showGutHp);
     const ring = ringRef.current;
@@ -1535,6 +1614,73 @@ function FittedFigure({
     for (const v of setup.weightViews) {
       v.mesh.material = s.showWeights ? v.weight : v.orig;
     }
+    const vela = (window as unknown as { __vela?: Record<string, unknown> }).__vela;
+    if (vela) {
+      vela.frameBelly = () => {
+        camera.position.set(0.12, 1.05, 0.68);
+        camera.lookAt(setup.navel.x, setup.navel.y, setup.navel.z);
+        if (controlsRef.current) {
+          controlsRef.current.target.copy(setup.navel);
+          controlsRef.current.update();
+        }
+      };
+      vela.tiltBayonet = (x: number, y: number, z: number) => {
+        setup.knife.dragTo(new THREE.Vector3(x, y, z));
+        const ang = THREE.MathUtils.radToDeg(setup.knife.dir.angleTo(setup.knife.restAxis));
+        return {
+          dir: setup.knife.dir.toArray(),
+          restAxis: setup.knife.restAxis.toArray(),
+          angleDeg: +ang.toFixed(2),
+        };
+      };
+      vela.driveBayonet = (pen: number) => {
+        setup.knife.setEnabled(true);
+        if (!setup.knife.hasEntry) setup.knife.pick(setup.navel, new THREE.Vector3(0, 0, 1));
+        setup.knife.setRawPen(pen);
+        const t = setup.knife.pen01();
+        bayonetPenRef.current = t;
+        useStudio.setState({
+          interactMode: "bayonet",
+          bayonetHasEntry: true,
+          showOrgans: true,
+          abdomenXray: Math.max(0.38, useStudio.getState().abdomenXray),
+          showGutHp: true,
+          bayonetPen: t,
+        });
+        return {
+          hasEntry: setup.knife.hasEntry,
+          punctured: setup.knife.punctured,
+          penetration: setup.knife.penetration,
+          rawPen: setup.knife.rawPen,
+          enabled: setup.knife.enabled,
+          storePen: t,
+        };
+      };
+      if (energyTick.current % 2 === 0) {
+        let minHp = 1;
+        for (let i = 0; i < setup.gutHealth.hp.length; i++) {
+          minHp = Math.min(minHp, setup.gutHealth.hp[i]!);
+        }
+        vela.bayonet = {
+          hasEntry: setup.knife.hasEntry,
+          punctured: setup.knife.punctured,
+          penetration: +setup.knife.penetration.toFixed(3),
+          squeeze: +setup.knife.squeeze.toFixed(3),
+          rawPen: +setup.knife.rawPen.toFixed(3),
+          entry: setup.knife.entry.toArray(),
+          tip: setup.knife.tip.toArray(),
+          handle: setup.knife.handle.toArray(),
+          dir: setup.knife.dir.toArray(),
+          restAxis: setup.knife.restAxis.toArray(),
+          cone: 30,
+          wounds: setup.knife.wounds.children.length,
+          wound0: setup.knife.wounds.children[0]
+            ? (setup.knife.wounds.children[0] as THREE.Mesh).position.toArray()
+            : null,
+          minHp: +minHp.toFixed(3),
+        };
+      }
+    }
   });
 
   const latticeGeo = useMemo(() => {
@@ -1552,7 +1698,7 @@ function FittedFigure({
     return g;
   }, [setup]);
 
-  const beginGrab = (point: THREE.Vector3, normal: THREE.Vector3, mode: "pose" | "drag" | "fist") => {
+  const beginGrab = (point: THREE.Vector3, normal: THREE.Vector3, mode: "pose" | "drag" | "fist" | "bayonet") => {
     grab.current = {
       active: true,
       mode,
@@ -1588,6 +1734,29 @@ function FittedFigure({
     } else {
       _normal.set(0, 0, 1);
     }
+    if (mode === "bayonet") {
+      if (!setup.knife.hasEntry) {
+        camera.getWorldDirection(_camDir);
+        raycaster.setFromCamera(pointer, camera);
+        const hits = raycaster.intersectObjects(setup.torsoMeshes, false);
+        const hit = hits.find((h) => h.face && h.distance > 0.001);
+        if (!hit?.face) return;
+        _hit.copy(hit.point);
+        _normal.copy(hit.face.normal).transformDirection(hit.object.matrixWorld).normalize();
+        if (_normal.dot(_camDir) > 0) _normal.negate();
+        setup.knife.pick(_hit, _normal);
+        bayonetPenRef.current = 0;
+        useStudio.getState().setBayonetHasEntry(true);
+        useStudio.getState().setBayonetPen(0);
+        if (pokeRef.current) {
+          pokeRef.current.position.copy(_hit);
+          pokeRef.current.visible = true;
+        }
+        return;
+      }
+      beginGrab(setup.knife.handle, _normal, "bayonet");
+      return;
+    }
     beginGrab(_hit, _normal, mode === "pose" ? "pose" : "drag");
   };
 
@@ -1600,7 +1769,8 @@ function FittedFigure({
         object={setup.root}
         onPointerDown={onPointerDown}
         onPointerOver={() => {
-          gl.domElement.style.cursor = useStudio.getState().interactMode === "strike" ? "crosshair" : "grab";
+          const m = useStudio.getState().interactMode;
+          gl.domElement.style.cursor = m === "strike" || (m === "bayonet" && !setup.knife.hasEntry) ? "crosshair" : "grab";
         }}
         onPointerOut={() => {
           if (!grab.current) gl.domElement.style.cursor = "default";
@@ -1610,7 +1780,8 @@ function FittedFigure({
         position={[0, midY, ab.max.z + 0.01]}
         onPointerDown={onPointerDown}
         onPointerOver={() => {
-          gl.domElement.style.cursor = useStudio.getState().interactMode === "strike" ? "crosshair" : "grab";
+          const m = useStudio.getState().interactMode;
+          gl.domElement.style.cursor = m === "strike" || (m === "bayonet" && !setup.knife.hasEntry) ? "crosshair" : "grab";
         }}
         onPointerOut={() => {
           if (!grab.current) gl.domElement.style.cursor = "default";

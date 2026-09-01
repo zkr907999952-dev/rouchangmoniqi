@@ -8,6 +8,7 @@ export const MODEL_FILES = [
   { id: "intestines" as const, url: "/models/intestines.glb", bytes: 15_629_192, path: "/models/", hint: "大小肠" },
   { id: "pelvis" as const, url: "/models/pelvis.glb", bytes: 760_380, path: "/models/", hint: "盆腔" },
   { id: "arm" as const, url: "/models/arm.glb", bytes: 139_896, path: "/models/", hint: "手臂" },
+  { id: "bayonet" as const, url: "/models/bayonet.glb", bytes: 3_873_372, path: "/models/", hint: "刺刀" },
   { id: "room" as const, url: "/models/room.glb", bytes: 16_153_124, path: "/models/", hint: "房间" },
 ];
 
@@ -18,6 +19,7 @@ export type LoadedScenes = {
   intestines: THREE.Group;
   pelvis: THREE.Group;
   arm: THREE.Group;
+  bayonet: THREE.Group;
   room: THREE.Group;
 };
 
@@ -118,12 +120,15 @@ export function useModelAssets(enabled: boolean): LoadedScenes | null {
         useStudio.setState({ loadProgress: 97, loadHint: "解析手臂" });
         const arm = await parseGlb(buffers[3]!, MODEL_FILES[3]!.path);
         if (cancelled) return;
-        useStudio.setState({ loadProgress: 98, loadHint: "解析房间" });
-        const room = await parseGlb(buffers[4]!, MODEL_FILES[4]!.path);
+        useStudio.setState({ loadProgress: 98, loadHint: "解析刺刀" });
+        const bayonet = await parseGlb(buffers[4]!, MODEL_FILES[4]!.path);
+        if (cancelled) return;
+        useStudio.setState({ loadProgress: 99, loadHint: "解析房间" });
+        const room = await parseGlb(buffers[5]!, MODEL_FILES[5]!.path);
         if (cancelled) return;
 
         useStudio.setState({ loadProgress: 99, loadHint: "组装柔体" });
-        setScenes({ character, intestines, pelvis, arm, room });
+        setScenes({ character, intestines, pelvis, arm, bayonet, room });
       } catch (err) {
         if (cancelled) return;
         const message = err instanceof Error ? err.message : "模型加载失败";

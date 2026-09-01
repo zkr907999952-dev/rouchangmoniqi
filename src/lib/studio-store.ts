@@ -2,7 +2,7 @@ import { create } from "zustand";
 import type { ExpressionId, PoseId } from "@/lib/softbody/soft-skeleton";
 
 export type PresetId = "soft" | "firm" | "jelly" | "athletic";
-export type InteractMode = "drag" | "pose" | "strike" | "fist";
+export type InteractMode = "drag" | "pose" | "strike" | "fist" | "bayonet";
 export type BedStance = "front" | "on" | "lie";
 
 export type StudioParams = {
@@ -226,6 +226,8 @@ type StudioState = StudioParams & {
   loadHint: string;
   loadError: string | null;
   retryNonce: number;
+  bayonetHasEntry: boolean;
+  bayonetPen: number;
   setParam: <K extends keyof StudioParams>(key: K, value: StudioParams[K]) => void;
   applyPreset: (id: PresetId) => void;
   setInteractMode: (mode: InteractMode) => void;
@@ -233,6 +235,8 @@ type StudioState = StudioParams & {
   setPose: (id: PoseId) => void;
   setEnergy: (v: number) => void;
   setGrabbing: (v: boolean) => void;
+  setBayonetHasEntry: (v: boolean) => void;
+  setBayonetPen: (v: number) => void;
   shake: () => void;
   fireStrike: (point?: [number, number, number] | null) => void;
   resetSim: () => void;
@@ -256,6 +260,8 @@ export const useStudio = create<StudioState>((set) => ({
   loadHint: "准备下载",
   loadError: null,
   retryNonce: 0,
+  bayonetHasEntry: false,
+  bayonetPen: 0,
   setParam: (key, value) =>
     set((s) => ({
       ...s,
@@ -302,10 +308,12 @@ export const useStudio = create<StudioState>((set) => ({
   setPose: (pose) => set({ pose }),
   setEnergy: (energy) => set({ energy }),
   setGrabbing: (grabbing) => set({ grabbing }),
+  setBayonetHasEntry: (bayonetHasEntry) => set({ bayonetHasEntry }),
+  setBayonetPen: (bayonetPen) => set({ bayonetPen: Math.max(0, Math.min(1, bayonetPen)) }),
   shake: () => set((s) => ({ shakeNonce: s.shakeNonce + 1 })),
   fireStrike: (point = null) =>
     set((s) => ({ strikeNonce: s.strikeNonce + 1, strikePoint: point ?? null })),
-  resetSim: () => set((s) => ({ resetNonce: s.resetNonce + 1, energy: 0 })),
+  resetSim: () => set((s) => ({ resetNonce: s.resetNonce + 1, energy: 0, bayonetHasEntry: false, bayonetPen: 0 })),
   retryLoad: () =>
     set((s) => ({
       loading: true,
