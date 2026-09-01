@@ -1329,9 +1329,11 @@ function FittedFigure({
     };
     window.addEventListener("pointerup", onUp);
     window.addEventListener("pointercancel", onUp);
+    window.addEventListener("studio-cancel-grab", onUp);
     return () => {
       window.removeEventListener("pointerup", onUp);
       window.removeEventListener("pointercancel", onUp);
+      window.removeEventListener("studio-cancel-grab", onUp);
     };
   }, [gl, setup]);
 

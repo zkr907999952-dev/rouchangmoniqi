@@ -12,8 +12,8 @@ var install_page_default = "<!DOCTYPE html>\n<html lang=\"en\" class=\"device-de
 //#endregion
 //#region \0virtual:grok-og-identity
 var grokOgIdentity = { "site": {
-	"title": "VELA",
-	"description": "VELA — 基于物理的 3D 腰腹柔体模拟工作室",
+	"title": "柔肠模拟器",
+	"description": "柔肠模拟器 — 3D 肠道柔体模拟",
 	"type": "x:game",
 	"card": "custom",
 	"color": "0B0B0C",

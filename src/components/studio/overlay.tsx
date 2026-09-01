@@ -202,6 +202,7 @@ export function Overlay() {
       <header className="pointer-events-none absolute top-0 right-0 left-0 flex items-start justify-between gap-4 p-4 pr-16 sm:p-6 sm:pr-20">
         <div className="max-w-[16rem]">
           <p className="font-display text-2xl leading-none tracking-display text-fg sm:text-3xl">柔肠模拟器</p>
+          <p className="mt-1.5 text-[11px] leading-snug text-muted sm:hidden">双指拖动平移 · 双击后拖动旋转</p>
         </div>
         <div className="pointer-events-auto">
           <button

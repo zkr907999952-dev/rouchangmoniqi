@@ -1,6 +1,6 @@
-import { Canvas } from "@react-three/fiber";
+import { Canvas, useThree } from "@react-three/fiber";
 import { OrbitControls } from "@react-three/drei";
-import { Suspense, useMemo, useRef, type RefObject } from "react";
+import { Suspense, useEffect, useMemo, useRef, type RefObject } from "react";
 import * as THREE from "three";
 import type { OrbitControls as OrbitControlsImpl } from "three-stdlib";
 import { Figure } from "./figure";
@@ -119,6 +119,132 @@ function ControlsBridge({
 }) {
   const autoRotate = useStudio((s) => s.autoRotate);
   const grabbing = useStudio((s) => s.grabbing);
+  const { gl, camera } = useThree();
+
+  useEffect(() => {
+    const canvas = gl.domElement;
+    const host = canvas.parentElement ?? canvas;
+    const TAP_MS = 340;
+    const TAP_PX = 38;
+    const HOLD_MS = 280;
+    const sph = new THREE.Spherical();
+    const offset = new THREE.Vector3();
+    let pressT = 0;
+    let pressX = 0;
+    let pressY = 0;
+    let pressId = -1;
+    let lastTapT = 0;
+    let lastTapX = 0;
+    let lastTapY = 0;
+    let rotating = false;
+    let rotId = -1;
+    let px = 0;
+    let py = 0;
+
+    const setRotateFlag = (on: boolean) => {
+      const c = controlsRef.current as (OrbitControlsImpl & { _touchRotate?: boolean }) | null;
+      if (c) c._touchRotate = on;
+    };
+
+    const rotateBy = (x: number, y: number) => {
+      const c = controlsRef.current;
+      if (!c) return;
+      const dx = x - px;
+      const dy = y - py;
+      px = x;
+      py = y;
+      offset.copy(camera.position).sub(c.target);
+      sph.setFromVector3(offset);
+      sph.theta -= dx * 0.0055;
+      sph.phi = THREE.MathUtils.clamp(sph.phi - dy * 0.0055, c.minPolarAngle, c.maxPolarAngle);
+      sph.makeSafe();
+      offset.setFromSpherical(sph);
+      camera.position.copy(c.target).add(offset);
+      camera.lookAt(c.target);
+      c.update();
+    };
+
+    const down = (e: PointerEvent) => {
+      if (e.pointerType !== "touch") return;
+      const now = performance.now();
+      const dx = e.clientX - lastTapX;
+      const dy = e.clientY - lastTapY;
+      const isDouble =
+        e.isPrimary && now - lastTapT < TAP_MS && dx * dx + dy * dy < TAP_PX * TAP_PX;
+      if (isDouble) {
+        rotating = true;
+        rotId = e.pointerId;
+        px = e.clientX;
+        py = e.clientY;
+        lastTapT = 0;
+        setRotateFlag(true);
+        window.dispatchEvent(new Event("studio-cancel-grab"));
+        e.stopPropagation();
+        e.preventDefault();
+        return;
+      }
+      pressT = now;
+      pressX = e.clientX;
+      pressY = e.clientY;
+      pressId = e.pointerId;
+    };
+
+    const move = (e: PointerEvent) => {
+      if (!rotating || e.pointerId !== rotId) return;
+      rotateBy(e.clientX, e.clientY);
+      e.stopPropagation();
+      e.preventDefault();
+    };
+
+    const up = (e: PointerEvent) => {
+      if (e.pointerType !== "touch") return;
+      if (rotating && e.pointerId === rotId) {
+        rotating = false;
+        rotId = -1;
+        setRotateFlag(false);
+        return;
+      }
+      if (e.pointerId !== pressId) return;
+      const dt = performance.now() - pressT;
+      const dx = e.clientX - pressX;
+      const dy = e.clientY - pressY;
+      if (dt < HOLD_MS && dx * dx + dy * dy < TAP_PX * TAP_PX) {
+        lastTapT = performance.now();
+        lastTapX = e.clientX;
+        lastTapY = e.clientY;
+      } else {
+        lastTapT = 0;
+      }
+      pressId = -1;
+    };
+
+    const touchStart = (e: TouchEvent) => {
+      if (e.touches.length < 2) return;
+      rotating = false;
+      rotId = -1;
+      setRotateFlag(false);
+      window.dispatchEvent(new Event("studio-cancel-grab"));
+      const c = controlsRef.current;
+      if (c) {
+        c.enablePan = true;
+        c.enableRotate = false;
+      }
+    };
+
+    host.addEventListener("pointerdown", down, true);
+    host.addEventListener("pointermove", move, true);
+    host.addEventListener("pointerup", up, true);
+    host.addEventListener("pointercancel", up, true);
+    host.addEventListener("touchstart", touchStart, { capture: true, passive: true });
+    return () => {
+      host.removeEventListener("pointerdown", down, true);
+      host.removeEventListener("pointermove", move, true);
+      host.removeEventListener("pointerup", up, true);
+      host.removeEventListener("pointercancel", up, true);
+      host.removeEventListener("touchstart", touchStart, true);
+    };
+  }, [gl, camera, controlsRef]);
+
   return (
     <OrbitControls
       ref={controlsRef}
@@ -140,7 +266,7 @@ function ControlsBridge({
         RIGHT: THREE.MOUSE.ROTATE,
       }}
       touches={{
-        ONE: THREE.TOUCH.ROTATE,
+        ONE: -1 as unknown as THREE.TOUCH,
         TWO: THREE.TOUCH.DOLLY_PAN,
       }}
     />
