@@ -29,7 +29,7 @@ import { EXPRESSIONS, POSES } from "@/lib/softbody/soft-skeleton";
 const SLIDERS: {
   id: keyof Pick<
     StudioParams,
-    "stiffness" | "damping" | "gravity" | "pressure" | "jiggle" | "wind" | "breathAmp" | "breathSpeed" | "abdomenXray" | "bellyInflate" | "gutAmp" | "gutSpeed" | "fistBulge" | "fistSpread" | "fistGut" | "fistLever" | "fistMaxDepth" | "fistRise"
+    "stiffness" | "damping" | "gravity" | "pressure" | "jiggle" | "wind" | "breathAmp" | "breathSpeed" | "abdomenXray" | "bellyInflate" | "navelDepth" | "navelDiameter" | "gutAmp" | "gutSpeed" | "fistBulge" | "fistSpread" | "fistGut" | "fistLever" | "fistMaxDepth" | "fistRise"
   >;
   label: string;
   min: number;
@@ -46,6 +46,8 @@ const SLIDERS: {
   { id: "breathSpeed", label: "呼吸速度", min: 0.05, max: 1, step: 0.01 },
   { id: "abdomenXray", label: "腹部半透明", min: 0, max: 1, step: 0.01 },
   { id: "bellyInflate", label: "彭腹", min: -1, max: 1, step: 0.01 },
+  { id: "navelDepth", label: "肚脐深度", min: 0, max: 1, step: 0.01 },
+  { id: "navelDiameter", label: "肚脐直径", min: 0, max: 2, step: 0.01 },
   { id: "gutAmp", label: "蠕动幅度", min: 0, max: 1, step: 0.01 },
   { id: "gutSpeed", label: "蠕动速度", min: 0, max: 1, step: 0.01 },
   { id: "fistBulge", label: "拳头鼓起", min: 0, max: 2, step: 0.01 },
@@ -138,7 +140,6 @@ export function Overlay() {
       if (e.key === "x" || e.key === "X") {
         const cur = useStudio.getState().abdomenXray;
         setParam("abdomenXray", cur > 0.05 ? 0 : 0.38);
-        if (cur <= 0.05) setParam("showOrgans", true);
       }
       if (e.key === "k" || e.key === "K") setParam("showLattice", !useStudio.getState().showLattice);
       if (e.key === "w" || e.key === "W") setParam("showWeights", !useStudio.getState().showWeights);
@@ -223,7 +224,6 @@ export function Overlay() {
             onClick={() => {
               const on = abdomenXray > 0.05;
               setParam("abdomenXray", on ? 0 : 0.38);
-              if (!on) setParam("showOrgans", true);
             }}
             className={cn(
               "inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-medium transition-colors duration-fast ease-smooth-out",
@@ -358,34 +358,19 @@ export function Overlay() {
                 />
                 <Toggle
                   active={showOrgans}
-                  onClick={() => {
-                    const next = !showOrgans;
-                    setParam("showOrgans", next);
-                    if (next && abdomenXray < 0.08) setParam("abdomenXray", 0.38);
-                    if (!next) setParam("abdomenXray", 0);
-                  }}
+                  onClick={() => setParam("showOrgans", !showOrgans)}
                   icon={<Scan className="size-3.5" />}
                   label="脏器"
                 />
                 <Toggle
                   active={abdomenXray > 0.05}
-                  onClick={() => {
-                    setParam("abdomenXray", abdomenXray > 0.05 ? 0 : 0.38);
-                    if (abdomenXray <= 0.05) setParam("showOrgans", true);
-                  }}
+                  onClick={() => setParam("abdomenXray", abdomenXray > 0.05 ? 0 : 0.38)}
                   icon={<Scan className="size-3.5" />}
                   label="透视"
                 />
                 <Toggle
                   active={showGutHp}
-                  onClick={() => {
-                    const next = !showGutHp;
-                    setParam("showGutHp", next);
-                    if (next) {
-                      setParam("showOrgans", true);
-                      if (abdomenXray < 0.08) setParam("abdomenXray", 0.38);
-                    }
-                  }}
+                  onClick={() => setParam("showGutHp", !showGutHp)}
                   icon={<Heart className="size-3.5" />}
                   label="显示生命值"
                 />

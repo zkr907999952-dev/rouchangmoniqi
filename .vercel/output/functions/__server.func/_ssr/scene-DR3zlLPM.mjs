@@ -2,8 +2,8 @@ import { i as __toESM } from "../_runtime.mjs";
 import { a as require_jsx_runtime, o as require_react } from "../_libs/@radix-ui/react-collection+[...].mjs";
 import { B as MathUtils, Et as Vector4, H as Mesh, K as MeshStandardMaterial, R as MOUSE, Tt as Vector3, U as MeshBasicMaterial, V as Matrix4, W as MeshLambertMaterial, _ as Euler, d as BufferGeometry, f as CanvasTexture, ft as RingGeometry, g as DynamicDrawUsage, i as useThree, j as LineSegments, k as LineBasicMaterial, l as Box3, lt as Ray, m as Color, n as Canvas, nt as PlaneGeometry, p as ClampToEdgeWrapping, pt as SRGBColorSpace, r as useFrame, rt as PointLight, st as Quaternion, t as OrbitControls, tt as Plane, u as BufferAttribute, ut as Raycaster, vt as SphereGeometry, wt as Vector2, xt as TOUCH, y as Group, yt as Spherical } from "../_libs/@react-three/drei+[...].mjs";
 import { n as SkeletonUtils } from "../_libs/three-stdlib.mjs";
-import { n as useStudio, r as SoftSkeleton } from "./routes-CsyOEWwW.mjs";
-//#region node_modules/.nitro/vite/services/ssr/assets/scene-BD1koGd4.js
+import { n as useStudio, r as SoftSkeleton } from "./routes-BjnJqq51.mjs";
+//#region node_modules/.nitro/vite/services/ssr/assets/scene-DR3zlLPM.js
 var import_react = /* @__PURE__ */ __toESM(require_react());
 var import_jsx_runtime = require_jsx_runtime();
 function addEdge(adj, slot, a, b, len) {
@@ -2008,6 +2008,108 @@ function detectBladeLen(arr, count, totalLen) {
 	const bladeLen = totalLen - (guardBin + .2) / bins * totalLen;
 	return MathUtils.clamp(bladeLen, totalLen * .48, totalLen * .84);
 }
+function buildNavelMorph(bindings, navel) {
+	const nx = navel.x;
+	const ny = navel.y;
+	const nz = navel.z;
+	let ringZ = 0;
+	let ringN = 0;
+	for (const b of bindings) {
+		const rest = b.rest;
+		for (let i = 0; i < b.count; i++) {
+			const dx = rest[i * 3] - nx;
+			const dy = rest[i * 3 + 1] - ny;
+			const rz = rest[i * 3 + 2];
+			if (rz < nz - .04) continue;
+			const r = Math.hypot(dx, dy);
+			if (r > .012 && r < .028) {
+				ringZ += rz;
+				ringN++;
+			}
+		}
+	}
+	const planeZ = ringN > 6 ? ringZ / ringN : nz + .006;
+	const verts = [];
+	for (const b of bindings) {
+		const rest = b.rest;
+		for (let i = 0; i < b.count; i++) {
+			const rx = rest[i * 3];
+			const ry = rest[i * 3 + 1];
+			const rz = rest[i * 3 + 2];
+			if (rz < planeZ - .05) continue;
+			const dx = rx - nx;
+			const dy = ry - ny;
+			const r = Math.hypot(dx, dy);
+			if (r > .048) continue;
+			const inv = r > 1e-6 ? 1 / r : 0;
+			verts.push({
+				pos: b.positions,
+				i3: i * 3,
+				r,
+				ux: dx * inv,
+				uy: dy * inv,
+				restx: rx,
+				resty: ry,
+				restz: rz
+			});
+		}
+	}
+	return {
+		verts,
+		nx,
+		ny,
+		planeZ
+	};
+}
+function applyNavelMorph(morph, depth, diameter) {
+	const d = MathUtils.clamp(depth, 0, 1);
+	if (d < .012) return;
+	const R = .0065 + MathUtils.clamp(diameter, .35, 2.2) * .0085;
+	const D = d * .092;
+	const cap = Math.min(R * .92, D * .38);
+	const rim = R * 1.28;
+	const split = .2;
+	const { nx, ny, planeZ } = morph;
+	for (const v of morph.verts) {
+		if (v.r > rim) continue;
+		let rad;
+		let along;
+		if (v.r <= R) {
+			const s = v.r / R;
+			if (s < split) {
+				const th = s / split * Math.PI * .5;
+				rad = R * Math.sin(th);
+				along = D - cap * (1 - Math.cos(th));
+			} else {
+				const w = (s - split) / .8;
+				rad = R;
+				along = (D - cap) * (1 - w);
+			}
+		} else {
+			const fade = 1 - (v.r - R) / (rim - R);
+			const s = fade * fade * (3 - 2 * fade);
+			rad = v.r;
+			along = 0;
+			const tx = nx + v.ux * rad;
+			const ty = ny + v.uy * rad;
+			const tz = planeZ - along;
+			v.pos[v.i3] += (tx - v.restx) * s * .18;
+			v.pos[v.i3 + 1] += (ty - v.resty) * s * .18;
+			v.pos[v.i3 + 2] += (tz - v.restz) * s * .18;
+			continue;
+		}
+		if (v.r < 1e-6) {
+			rad = 0;
+			along = D;
+		}
+		const tx = nx + v.ux * rad;
+		const ty = ny + v.uy * rad;
+		const tz = planeZ - along;
+		v.pos[v.i3] += tx - v.restx;
+		v.pos[v.i3 + 1] += ty - v.resty;
+		v.pos[v.i3 + 2] += tz - v.restz;
+	}
+}
 var _hit = new Vector3();
 var _normal = new Vector3();
 var _target = new Vector3();
@@ -2154,30 +2256,81 @@ function liftGutsOffUterus(gut, uterusBox) {
 	});
 }
 function findNavel(body, height) {
-	const y0 = height * .56;
-	const y1 = height * .63;
-	const best = new Vector3(0, height * .59, .06);
-	let bestScore = -Infinity;
+	const y0 = height * .568;
+	const y1 = height * .642;
+	const pts = [];
+	let maxZ = -Infinity;
 	body.traverse((obj) => {
 		const mesh = obj;
 		if (!mesh.isMesh || !mesh.geometry) return;
 		if (!isTorsoMesh(mesh)) return;
 		const pos = mesh.geometry.getAttribute("position");
 		if (!pos) return;
-		const step = Math.max(1, Math.floor(pos.count / 8e3));
-		for (let i = 0; i < pos.count; i += step) {
+		for (let i = 0; i < pos.count; i++) {
 			_local.fromBufferAttribute(pos, i);
 			mesh.localToWorld(_local);
 			if (_local.y < y0 || _local.y > y1) continue;
-			if (Math.abs(_local.x) > .04) continue;
-			const score = _local.z * 4 - Math.abs(_local.x) * 8;
-			if (score > bestScore) {
-				bestScore = score;
-				best.copy(_local);
-			}
+			if (Math.abs(_local.x) > .045) continue;
+			if (_local.z < .04) continue;
+			pts.push(_local.clone());
+			if (Math.abs(_local.x) < .03 && _local.z > maxZ) maxZ = _local.z;
 		}
 	});
-	return best;
+	const fallback = new Vector3(0, height * .6, Math.max(.08, maxZ));
+	if (pts.length < 12 || maxZ < .05) return fallback;
+	const wall = maxZ - .02;
+	const cell = .008;
+	const grid = /* @__PURE__ */ new Map();
+	const key = (x, y) => `${Math.floor(x / cell)},${Math.floor(y / cell)}`;
+	for (const p of pts) {
+		if (p.z < wall) continue;
+		const k = key(p.x, p.y);
+		const b = grid.get(k);
+		if (b) b.push(p);
+		else grid.set(k, [p]);
+	}
+	let best = fallback;
+	let bestScore = -Infinity;
+	for (const p of pts) {
+		if (p.z < wall) continue;
+		if (Math.abs(p.x) > .016) continue;
+		const i0 = Math.floor((p.x - .016) / cell);
+		const i1 = Math.floor((p.x + .016) / cell);
+		const j0 = Math.floor((p.y - .016) / cell);
+		const j1 = Math.floor((p.y + .016) / cell);
+		let sumZ = 0;
+		let n = 0;
+		for (let ix = i0; ix <= i1; ix++) for (let iy = j0; iy <= j1; iy++) {
+			const bucket = grid.get(`${ix},${iy}`);
+			if (!bucket) continue;
+			for (const q of bucket) {
+				const d2 = (q.x - p.x) ** 2 + (q.y - p.y) ** 2;
+				if (d2 < 26e-5 && d2 > 3e-7) {
+					sumZ += q.z;
+					n++;
+				}
+			}
+		}
+		if (n < 8) continue;
+		const inset = sumZ / n - p.z;
+		if (inset < 4e-4 || inset > .018) continue;
+		const score = inset * 22 - Math.abs(p.x) * 10 + (p.z - wall) * 2;
+		if (score > bestScore) {
+			bestScore = score;
+			best = p;
+		}
+	}
+	if (bestScore < -1) {
+		let minZ = Infinity;
+		for (const p of pts) {
+			if (Math.abs(p.x) > .01 || p.z < wall) continue;
+			if (p.z < minZ) {
+				minZ = p.z;
+				best = p;
+			}
+		}
+	}
+	return best.clone();
 }
 function collectSample(root, test, cap = 8e3) {
 	const pts = [];
@@ -3012,6 +3165,7 @@ function FittedFigure({ character, intestines, pelvis, arm, bayonet, bayonetLong
 		landmarks.rHand ??= new Vector3(armSpan * .85, yNavel - .2, .03);
 		const skeleton = new SoftSkeleton(landmarks, height);
 		const boundGeos = [];
+		const torsoBinds = [];
 		const weightViews = [];
 		const bindMesh = (mesh, hint) => {
 			let geo = mesh.geometry;
@@ -3036,6 +3190,7 @@ function FittedFigure({ character, intestines, pelvis, arm, bayonet, bayonetLong
 			const binding = skeleton.bind(pos.array, hint ?? bindHint(mesh));
 			geo.setAttribute("color", new BufferAttribute(binding.colors, 3));
 			boundGeos.push(geo);
+			if (!hint && isTorsoMesh(mesh)) torsoBinds.push(binding);
 			const weightMat = new MeshLambertMaterial({
 				vertexColors: true,
 				side: 2
@@ -3084,6 +3239,7 @@ function FittedFigure({ character, intestines, pelvis, arm, bayonet, bayonetLong
 			xMax: .12,
 			zFront: skinZ - .01
 		});
+		const navelMorph = buildNavelMorph(torsoBinds, navel);
 		root.add(knife.root);
 		root.add(knife.wounds);
 		pelvic.traverse((obj) => {
@@ -3206,6 +3362,7 @@ function FittedFigure({ character, intestines, pelvis, arm, bayonet, bayonetLong
 			knife,
 			torsoMeshes,
 			navel,
+			navelMorph,
 			boundGeos,
 			bellyLight,
 			weightViews,
@@ -3433,6 +3590,7 @@ function FittedFigure({ character, intestines, pelvis, arm, bayonet, bayonetLong
 			fistLever: s.fistLever,
 			fistRise: s.fistRise
 		});
+		applyNavelMorph(setup.navelMorph, s.navelDepth, s.navelDiameter);
 		gutExc.current += (0 - gutExc.current) * (1 - Math.exp(-.42 * dt));
 		if (s.showOrgans && s.abdomenXray > .08) {
 			const g = gutExc.current;
@@ -3468,11 +3626,6 @@ function FittedFigure({ character, intestines, pelvis, arm, bayonet, bayonetLong
 				setup.gutHealth.hit(e.x + ddir.x * t, e.y + ddir.y * t, e.z + ddir.z * t, .38, .32);
 			}
 			gutExc.current = Math.min(.35, gutExc.current + .12);
-			if (!s.showOrgans || s.abdomenXray < .08) useStudio.setState({
-				showOrgans: true,
-				abdomenXray: Math.max(.38, s.abdomenXray),
-				showGutHp: true
-			});
 		}
 		setup.gutHealth.applyColor();
 		setup.gutHealth.updateBars(camera, s.showGutHp);
@@ -3491,7 +3644,7 @@ function FittedFigure({ character, intestines, pelvis, arm, bayonet, bayonetLong
 		energyTick.current += 1;
 		writeBindings();
 		if (energyTick.current % 8 === 0) s.setEnergy(setup.skeleton.energy);
-		if (!grab.current?.active && (setup.skeleton.hasDents || Math.abs(s.bellyInflate) > .04 ? energyTick.current % 2 === 0 : energyTick.current % 20 === 0)) {
+		if (!grab.current?.active && (setup.skeleton.hasDents || Math.abs(s.bellyInflate) > .04 || Math.abs(s.navelDepth - .5) > .04 || Math.abs(s.navelDiameter - 1) > .06 ? energyTick.current % 2 === 0 : energyTick.current % 20 === 0)) {
 			for (const geo of setup.boundGeos) if (geo.getAttribute("position").count < 8e4) geo.computeVertexNormals();
 		}
 		const xray = s.abdomenXray;
@@ -3538,6 +3691,20 @@ function FittedFigure({ character, intestines, pelvis, arm, bayonet, bayonetLong
 					controlsRef.current.target.copy(setup.navel);
 					controlsRef.current.update();
 				}
+			};
+			vela.frameNavel = () => {
+				const n = setup.navel;
+				camera.position.set(n.x + .02, n.y + .01, n.z + .11);
+				camera.lookAt(n.x, n.y, n.z);
+				if (controlsRef.current) {
+					controlsRef.current.target.copy(n);
+					controlsRef.current.update();
+				}
+				return n.toArray();
+			};
+			vela.setParam = (key, value) => {
+				useStudio.getState().setParam(key, value);
+				return useStudio.getState()[key];
 			};
 			vela.frameBack = () => {
 				camera.position.set(-.08, 1.08, -.55);

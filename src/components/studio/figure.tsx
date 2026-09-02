@@ -3,12 +3,13 @@ import { useFrame, useThree, type ThreeEvent } from "@react-three/fiber";
 import * as THREE from "three";
 import { SkeletonUtils } from "three-stdlib";
 import type { OrbitControls as OrbitControlsImpl } from "three-stdlib";
-import { SoftSkeleton } from "@/lib/softbody/soft-skeleton";
+import { SoftSkeleton, type SkinBinding } from "@/lib/softbody/soft-skeleton";
 import { GutPeristalsis } from "@/lib/softbody/peristalsis";
 import { BellyStrike } from "@/lib/softbody/belly-strike";
 import { GutHealth } from "@/lib/softbody/gut-health";
 import { FistPlay } from "@/lib/softbody/fist-play";
 import { BayonetPlay } from "@/lib/softbody/bayonet-play";
+import { applyNavelMorph, buildNavelMorph } from "@/lib/softbody/navel-morph";
 import { useStudio } from "@/lib/studio-store";
 
 const _hit = new THREE.Vector3();
@@ -181,30 +182,84 @@ function liftGutsOffUterus(gut: THREE.Object3D, uterusBox: THREE.Box3) {
 }
 
 function findNavel(body: THREE.Object3D, height: number) {
-  const y0 = height * 0.56;
-  const y1 = height * 0.63;
-  const best = new THREE.Vector3(0, height * 0.59, 0.06);
-  let bestScore = -Infinity;
+  const y0 = height * 0.568;
+  const y1 = height * 0.642;
+  const pts: THREE.Vector3[] = [];
+  let maxZ = -Infinity;
   body.traverse((obj) => {
     const mesh = obj as THREE.Mesh;
     if (!mesh.isMesh || !mesh.geometry) return;
     if (!isTorsoMesh(mesh)) return;
     const pos = mesh.geometry.getAttribute("position") as THREE.BufferAttribute | undefined;
     if (!pos) return;
-    const step = Math.max(1, Math.floor(pos.count / 8000));
-    for (let i = 0; i < pos.count; i += step) {
+    for (let i = 0; i < pos.count; i++) {
       _local.fromBufferAttribute(pos, i);
       mesh.localToWorld(_local);
       if (_local.y < y0 || _local.y > y1) continue;
-      if (Math.abs(_local.x) > 0.04) continue;
-      const score = _local.z * 4 - Math.abs(_local.x) * 8;
-      if (score > bestScore) {
-        bestScore = score;
-        best.copy(_local);
-      }
+      if (Math.abs(_local.x) > 0.045) continue;
+      if (_local.z < 0.04) continue;
+      pts.push(_local.clone());
+      if (Math.abs(_local.x) < 0.03 && _local.z > maxZ) maxZ = _local.z;
     }
   });
-  return best;
+  const fallback = new THREE.Vector3(0, height * 0.6, Math.max(0.08, maxZ));
+  if (pts.length < 12 || maxZ < 0.05) return fallback;
+
+  const wall = maxZ - 0.02;
+  const cell = 0.008;
+  const grid = new Map<string, THREE.Vector3[]>();
+  const key = (x: number, y: number) => `${Math.floor(x / cell)},${Math.floor(y / cell)}`;
+  for (const p of pts) {
+    if (p.z < wall) continue;
+    const k = key(p.x, p.y);
+    const b = grid.get(k);
+    if (b) b.push(p);
+    else grid.set(k, [p]);
+  }
+  let best = fallback;
+  let bestScore = -Infinity;
+  for (const p of pts) {
+    if (p.z < wall) continue;
+    if (Math.abs(p.x) > 0.016) continue;
+    const i0 = Math.floor((p.x - 0.016) / cell);
+    const i1 = Math.floor((p.x + 0.016) / cell);
+    const j0 = Math.floor((p.y - 0.016) / cell);
+    const j1 = Math.floor((p.y + 0.016) / cell);
+    let sumZ = 0;
+    let n = 0;
+    for (let ix = i0; ix <= i1; ix++) {
+      for (let iy = j0; iy <= j1; iy++) {
+        const bucket = grid.get(`${ix},${iy}`);
+        if (!bucket) continue;
+        for (const q of bucket) {
+          const d2 = (q.x - p.x) ** 2 + (q.y - p.y) ** 2;
+          if (d2 < 2.6e-4 && d2 > 3e-7) {
+            sumZ += q.z;
+            n++;
+          }
+        }
+      }
+    }
+    if (n < 8) continue;
+    const inset = sumZ / n - p.z;
+    if (inset < 0.0004 || inset > 0.018) continue;
+    const score = inset * 22 - Math.abs(p.x) * 10 + (p.z - wall) * 2;
+    if (score > bestScore) {
+      bestScore = score;
+      best = p;
+    }
+  }
+  if (bestScore < -1) {
+    let minZ = Infinity;
+    for (const p of pts) {
+      if (Math.abs(p.x) > 0.01 || p.z < wall) continue;
+      if (p.z < minZ) {
+        minZ = p.z;
+        best = p;
+      }
+    }
+  }
+  return best.clone();
 }
 
 function collectSample(root: THREE.Object3D, test: (m: THREE.Mesh) => boolean, cap = 8000) {
@@ -1156,6 +1211,7 @@ function FittedFigure({
     landmarks.rHand ??= new THREE.Vector3(armSpan * 0.85, yNavel - 0.2, 0.03);
     const skeleton = new SoftSkeleton(landmarks, height);
     const boundGeos: THREE.BufferGeometry[] = [];
+    const torsoBinds: SkinBinding[] = [];
     const weightViews: { mesh: THREE.Mesh; orig: THREE.Material | THREE.Material[]; weight: THREE.Material }[] = [];
 
     const bindMesh = (mesh: THREE.Mesh, hint?: string) => {
@@ -1181,6 +1237,7 @@ function FittedFigure({
       const binding = skeleton.bind(pos.array, hint ?? bindHint(mesh));
       geo.setAttribute("color", new THREE.BufferAttribute(binding.colors, 3));
       boundGeos.push(geo);
+      if (!hint && isTorsoMesh(mesh)) torsoBinds.push(binding);
       const weightMat = new THREE.MeshLambertMaterial({
         vertexColors: true,
         side: THREE.DoubleSide,
@@ -1223,6 +1280,7 @@ function FittedFigure({
     const knife = new BayonetPlay();
     knife.attach(bayonet, peristalsis.getTubes(), bayonetLong);
     knife.setSkin(torsoMeshes, { y0: yX0, y1: yX1, xMax: 0.12, zFront: skinZ - 0.01 });
+    const navelMorph = buildNavelMorph(torsoBinds, navel);
     root.add(knife.root);
     root.add(knife.wounds);
     pelvic.traverse((obj) => {
@@ -1310,6 +1368,7 @@ function FittedFigure({
       knife,
       torsoMeshes,
       navel,
+      navelMorph,
       boundGeos,
       bellyLight,
       weightViews,
@@ -1553,8 +1612,9 @@ function FittedFigure({
       fistLever: s.fistLever,
       fistRise: s.fistRise,
     });
+    applyNavelMorph(setup.navelMorph, s.navelDepth, s.navelDiameter);
     gutExc.current += (0 - gutExc.current) * (1 - Math.exp(-0.42 * dt));
-    if (s.showOrgans && s.abdomenXray > 0.08) {
+    {
       const g = gutExc.current;
       setup.peristalsis.apply(state.clock.elapsedTime, s.gutAmp * (1 + g * 0.38), s.gutSpeed * (1 + g * 0.3));
     }
@@ -1606,7 +1666,7 @@ function FittedFigure({
     energyTick.current += 1;
     writeBindings();
     if (energyTick.current % 8 === 0) s.setEnergy(setup.skeleton.energy);
-    if (!grab.current?.active && ((setup.skeleton.hasDents || Math.abs(s.bellyInflate) > 0.04) ? energyTick.current % 2 === 0 : energyTick.current % 20 === 0)) {
+    if (!grab.current?.active && ((setup.skeleton.hasDents || Math.abs(s.bellyInflate) > 0.04 || s.navelDepth > 0.03 || s.navelDiameter > 0.03) ? energyTick.current % 2 === 0 : energyTick.current % 20 === 0)) {
       for (const geo of setup.boundGeos) {
         const n = geo.getAttribute("position").count;
         if (n < 80000) geo.computeVertexNormals();
@@ -1629,11 +1689,10 @@ function FittedFigure({
       }
     }
     for (const ov of setup.xrayOverlays) ov.visible = xray > 0.03 && !s.showWeights;
-    const show = s.showOrgans && xray > 0.08;
-    setup.gutRoot.visible = show;
-    setup.pelvisRoot.visible = show;
-    setup.bellyLight.intensity = show ? 0.05 + xray * 0.06 : 0;
-    if (show && energyTick.current % 6 === 0) {
+    setup.gutRoot.visible = s.showOrgans;
+    setup.pelvisRoot.visible = s.showOrgans;
+    setup.bellyLight.intensity = s.showOrgans && xray > 0.08 ? 0.05 + xray * 0.06 : 0;
+    if (s.showOrgans && energyTick.current % 6 === 0) {
       setup.gutRoot.traverse((obj) => {
         const mesh = obj as THREE.Mesh;
         if (!mesh.isMesh || !mesh.geometry) return;
@@ -1664,6 +1723,20 @@ function FittedFigure({
           controlsRef.current.target.copy(setup.navel);
           controlsRef.current.update();
         }
+      };
+      vela.frameNavel = () => {
+        const n = setup.navel;
+        camera.position.set(n.x + 0.02, n.y + 0.01, n.z + 0.11);
+        camera.lookAt(n.x, n.y, n.z);
+        if (controlsRef.current) {
+          controlsRef.current.target.copy(n);
+          controlsRef.current.update();
+        }
+        return n.toArray();
+      };
+      vela.setParam = (key: string, value: number) => {
+        useStudio.getState().setParam(key as "navelDepth", value);
+        return useStudio.getState()[key as "navelDepth"];
       };
       vela.frameBack = () => {
         camera.position.set(-0.08, 1.08, -0.55);

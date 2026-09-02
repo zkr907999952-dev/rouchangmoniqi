@@ -7,7 +7,7 @@ import { t as create } from "../_libs/zustand.mjs";
 import { i as SliderTrack, n as SliderRange, r as SliderThumb, t as Slider } from "../_libs/@radix-ui/react-slider+[...].mjs";
 import { t as clsx } from "../_libs/clsx.mjs";
 import { t as twMerge } from "../_libs/tailwind-merge.mjs";
-//#region node_modules/.nitro/vite/services/ssr/assets/routes-CsyOEWwW.js
+//#region node_modules/.nitro/vite/services/ssr/assets/routes-BjnJqq51.js
 var import_react = /* @__PURE__ */ __toESM(require_react());
 var import_jsx_runtime = require_jsx_runtime();
 var __defProp = Object.defineProperty;
@@ -1330,6 +1330,8 @@ var PRESETS = {
 		autoRotate: false,
 		abdomenXray: .38,
 		bellyInflate: 0,
+		navelDepth: .5,
+		navelDiameter: 1,
 		showOrgans: true,
 		showGutHp: false,
 		gutAmp: .3,
@@ -1370,6 +1372,8 @@ var PRESETS = {
 		autoRotate: false,
 		abdomenXray: .38,
 		bellyInflate: 0,
+		navelDepth: .5,
+		navelDiameter: 1,
 		showOrgans: true,
 		showGutHp: false,
 		gutAmp: .3,
@@ -1410,6 +1414,8 @@ var PRESETS = {
 		autoRotate: false,
 		abdomenXray: .38,
 		bellyInflate: 0,
+		navelDepth: .5,
+		navelDiameter: 1,
 		showOrgans: true,
 		showGutHp: false,
 		gutAmp: .3,
@@ -1450,6 +1456,8 @@ var PRESETS = {
 		autoRotate: false,
 		abdomenXray: .38,
 		bellyInflate: 0,
+		navelDepth: .5,
+		navelDiameter: 1,
 		showOrgans: true,
 		showGutHp: false,
 		gutAmp: .3,
@@ -1505,6 +1513,8 @@ var useStudio = create((set) => ({
 		preset: id,
 		abdomenXray: s.abdomenXray,
 		bellyInflate: s.bellyInflate,
+		navelDepth: s.navelDepth,
+		navelDiameter: s.navelDiameter,
 		breathAmp: s.breathAmp,
 		breathSpeed: s.breathSpeed,
 		showOrgans: s.showOrgans,
@@ -1644,6 +1654,20 @@ var SLIDERS = [
 		label: "彭腹",
 		min: -1,
 		max: 1,
+		step: .01
+	},
+	{
+		id: "navelDepth",
+		label: "肚脐深度",
+		min: 0,
+		max: 1,
+		step: .01
+	},
+	{
+		id: "navelDiameter",
+		label: "肚脐直径",
+		min: .4,
+		max: 2,
 		step: .01
 	},
 	{
@@ -2769,7 +2793,7 @@ function useModelAssets(enabled) {
 	}, [enabled, retryNonce]);
 	return scenes;
 }
-var Scene = (0, import_react.lazy)(() => import("./scene-BD1koGd4.mjs"));
+var Scene = (0, import_react.lazy)(() => import("./scene-DR3zlLPM.mjs"));
 function StudioApp() {
 	const [mounted, setMounted] = (0, import_react.useState)(false);
 	(0, import_react.useEffect)(() => setMounted(true), []);
