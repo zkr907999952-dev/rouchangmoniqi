@@ -1585,13 +1585,6 @@ function FittedFigure({
         setup.gutHealth.hit(e.x + ddir.x * t, e.y + ddir.y * t, e.z + ddir.z * t, 0.38, 0.32);
       }
       gutExc.current = Math.min(0.35, gutExc.current + 0.12);
-      if (!s.showOrgans || s.abdomenXray < 0.08) {
-        useStudio.setState({
-          showOrgans: true,
-          abdomenXray: Math.max(0.38, s.abdomenXray),
-          showGutHp: true,
-        });
-      }
     }
     setup.gutHealth.applyColor();
     setup.gutHealth.updateBars(camera, s.showGutHp);
