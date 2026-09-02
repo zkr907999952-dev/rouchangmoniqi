@@ -1,13 +1,13 @@
 import { i as __toESM } from "../_runtime.mjs";
 import { a as require_jsx_runtime, o as require_react } from "../_libs/@radix-ui/react-collection+[...].mjs";
-import { B as MathUtils, L as LoadingManager, _ as Euler, m as Color, st as Quaternion, wt as Vector3 } from "../_libs/@react-three/drei+[...].mjs";
+import { B as MathUtils, L as LoadingManager, Tt as Vector3, _ as Euler, m as Color, st as Quaternion } from "../_libs/@react-three/drei+[...].mjs";
 import { _ as Eye, a as Sword, b as ChevronsUpDown, c as RotateCw, d as Pause, f as MousePointerClick, g as Grab, h as Grid3x3, l as RotateCcw, m as Hand, n as Wrench, o as Settings2, p as Heart, r as Wind, s as Scan, t as Zap, u as Repeat, v as EyeOff, x as Activity, y as Crosshair } from "../_libs/lucide-react.mjs";
 import { t as GLTFLoader } from "../_libs/three-stdlib.mjs";
 import { t as create } from "../_libs/zustand.mjs";
 import { i as SliderTrack, n as SliderRange, r as SliderThumb, t as Slider } from "../_libs/@radix-ui/react-slider+[...].mjs";
 import { t as clsx } from "../_libs/clsx.mjs";
 import { t as twMerge } from "../_libs/tailwind-merge.mjs";
-//#region node_modules/.nitro/vite/services/ssr/assets/routes-CgjXBDin.js
+//#region node_modules/.nitro/vite/services/ssr/assets/routes-CsyOEWwW.js
 var import_react = /* @__PURE__ */ __toESM(require_react());
 var import_jsx_runtime = require_jsx_runtime();
 var __defProp = Object.defineProperty;
@@ -2769,7 +2769,7 @@ function useModelAssets(enabled) {
 	}, [enabled, retryNonce]);
 	return scenes;
 }
-var Scene = (0, import_react.lazy)(() => import("./scene-rDu4aqis.mjs"));
+var Scene = (0, import_react.lazy)(() => import("./scene-BD1koGd4.mjs"));
 function StudioApp() {
 	const [mounted, setMounted] = (0, import_react.useState)(false);
 	(0, import_react.useEffect)(() => setMounted(true), []);

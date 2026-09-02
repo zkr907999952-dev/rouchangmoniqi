@@ -12,6 +12,8 @@ const _down = new THREE.Vector3(0, -1, 0);
 const _xA = new THREE.Vector3();
 const _zA = new THREE.Vector3();
 const _mat = new THREE.Matrix4();
+const _ray = new THREE.Raycaster();
+const _origin = new THREE.Vector3();
 const _t = new THREE.Vector3();
 const _b = new THREE.Vector3();
 
@@ -67,6 +69,14 @@ export class BayonetPlay {
   private skinHit: THREE.Mesh | null = null;
   private skinFace = -1;
   private xrayValue = 0;
+  private backSpawned = false;
+  private exitHit: {
+    point: THREE.Vector3;
+    normal: THREE.Vector3;
+    mesh: THREE.Mesh;
+    face: number;
+    dist: number;
+  } | null = null;
   private hitAcc = 0;
   private autoPhase: "idle" | "in" | "hold" | "out" = "idle";
   private holdT = 0;
@@ -158,7 +168,30 @@ export class BayonetPlay {
       const p = data.data;
       for (let i = 0; i < p.length; i += 4) {
         const m = Math.max(p[i]!, p[i + 1]!, p[i + 2]!);
-        p[i + 3] = m < 10 ? 0 : m < 36 ? ((m - 10) / 26) * 255 : 255;
+        p[i + 3] = m < 10 ? 0 : m < 40 ? ((m - 10) / 30) * 255 : 255;
+      }
+      const tw = Math.floor(c.width / 2);
+      const th = Math.floor(c.height / 2);
+      const padX = Math.max(8, tw * 0.2);
+      const padY = Math.max(8, th * 0.2);
+      for (let ty = 0; ty < 2; ty++) {
+        for (let tx = 0; tx < 2; tx++) {
+          for (let y = 0; y < th; y++) {
+            for (let x = 0; x < tw; x++) {
+              const fx = Math.min(x, tw - 1 - x) / padX;
+              const fy = Math.min(y, th - 1 - y) / padY;
+              const ex = fx <= 0 ? 0 : fx >= 1 ? 1 : fx * fx * (3 - 2 * fx);
+              const ey = fy <= 0 ? 0 : fy >= 1 ? 1 : fy * fy * (3 - 2 * fy);
+              const nx = (x + 0.5) / tw - 0.5;
+              const ny = (y + 0.5) / th - 0.5;
+              const r = Math.hypot(nx, ny) * 2.05;
+              const rad = r <= 0.32 ? 1 : r >= 0.78 ? 0 : 1 - (r - 0.32) / 0.46;
+              const srad = rad * rad * (3 - 2 * rad);
+              const i = ((ty * th + y) * c.width + (tx * tw + x)) * 4;
+              p[i + 3] = p[i + 3]! * ex * ey * srad;
+            }
+          }
+        }
       }
       ctx.putImageData(data, 0, 0);
       const tex = new THREE.CanvasTexture(c);
@@ -190,6 +223,8 @@ export class BayonetPlay {
     this.dir.copy(this.restAxis);
     this.skinHit = mesh ?? null;
     this.skinFace = faceIndex ?? -1;
+    this.backSpawned = false;
+    this.exitHit = null;
     const dist = this.totalLen - this.rawPen;
     this.handle.copy(this.entry).addScaledVector(this.dir, -dist);
     this.layout();
@@ -375,6 +410,9 @@ export class BayonetPlay {
       this.spawnWound();
     }
     this.penetration = this.punctured ? Math.max(0, this.rawPen) : 0;
+    if (this.kind === "long" && this.punctured && !this.backSpawned) {
+      this.trySpawnExitWound();
+    }
   }
 
   private layout() {
@@ -432,11 +470,39 @@ export class BayonetPlay {
   }
 
   private spawnWound() {
-    const host = this.skinHit ?? nearestSkin(this.skinMeshes, this.entry);
+    const long = this.kind === "long";
+    this.spawnWoundAt(
+      this.entry,
+      this.entryNormal,
+      this.skinHit,
+      this.skinFace,
+      long ? 0.038 : 0.05,
+      long ? 0.054 : 0.082,
+    );
+  }
+
+  private trySpawnExitWound() {
+    if (!this.exitHit) this.exitHit = findSkinExit(this.skinMeshes, this.entry, this.entryNormal, this.dir);
+    const hit = this.exitHit;
+    if (!hit) return;
+    if (this.rawPen < hit.dist - 0.005) return;
+    this.backSpawned = true;
+    this.spawnWoundAt(hit.point, hit.normal, hit.mesh, hit.face, 0.03, 0.042);
+  }
+
+  private spawnWoundAt(
+    center: THREE.Vector3,
+    normal: THREE.Vector3,
+    mesh: THREE.Mesh | null,
+    faceIndex: number,
+    stampW: number,
+    stampH: number,
+  ) {
+    const host = mesh ?? nearestSkin(this.skinMeshes, center);
     if (!host) return;
     const srcPos = host.geometry.getAttribute("position") as THREE.BufferAttribute | undefined;
     if (!srcPos || !(srcPos.array instanceof Float32Array)) return;
-    const patch = buildSkinPatch(host, this.entry, this.entryNormal, this.dir, this.skinFace);
+    const patch = buildSkinPatch(host, center, normal, this.dir, faceIndex, stampW, stampH);
     if (!patch) return;
 
     const tile = (Math.random() * 4) | 0;
@@ -468,7 +534,7 @@ export class BayonetPlay {
       polygonOffsetFactor: -8,
       polygonOffsetUnits: -8,
       toneMapped: false,
-      side: THREE.FrontSide,
+      side: THREE.DoubleSide,
     });
     const { y0, y1, xMax, zFront } = this.xray;
     mat.onBeforeCompile = (shader) => {
@@ -503,14 +569,17 @@ float xrayHole() {
           `#ifdef USE_MAP
            if (vMapUv.x < 0.0 || vMapUv.x > 1.0 || vMapUv.y < 0.0 || vMapUv.y > 1.0) discard;
            vec4 sampledDiffuseColor = texture2D(map, uTile.xy + vMapUv * uTile.zw);
-           if (sampledDiffuseColor.a < 0.08) discard;
+           float fx = smoothstep(0.0, 0.22, vMapUv.x) * smoothstep(0.0, 0.22, 1.0 - vMapUv.x);
+           float fy = smoothstep(0.0, 0.22, vMapUv.y) * smoothstep(0.0, 0.22, 1.0 - vMapUv.y);
+           float rad = 1.0 - smoothstep(0.28, 0.7, length(vMapUv - vec2(0.5)) * 1.95);
+           sampledDiffuseColor.a *= fx * fy * rad;
+           if (sampledDiffuseColor.a < 0.04) discard;
            diffuseColor *= sampledDiffuseColor;
            #endif`,
         )
         .replace(
           "#include <dithering_fragment>",
-          `if (!gl_FrontFacing) discard;
-           float hole = xrayHole();
+          `float hole = xrayHole();
            gl_FragColor.a *= mix(1.0, 0.06, pow(hole, 0.68));
            if (gl_FragColor.a < 0.04) discard;
            #include <dithering_fragment>`,
@@ -519,12 +588,12 @@ float xrayHole() {
     };
     mat.needsUpdate = true;
 
-    const mesh = new THREE.Mesh(patch.geo, mat);
-    mesh.frustumCulled = false;
-    mesh.renderOrder = 8;
-    mesh.raycast = () => {};
-    this.wounds.add(mesh);
-    this.patches.push({ mesh, src: srcPos, map: patch.map, pos: patch.pos });
+    const woundMesh = new THREE.Mesh(patch.geo, mat);
+    woundMesh.frustumCulled = false;
+    woundMesh.renderOrder = 8;
+    woundMesh.raycast = () => {};
+    this.wounds.add(woundMesh);
+    this.patches.push({ mesh: woundMesh, src: srcPos, map: patch.map, pos: patch.pos });
     this.syncWounds(this.xrayValue);
   }
 
@@ -589,6 +658,42 @@ float xrayHole() {
   }
 }
 
+function findSkinExit(
+  meshes: THREE.Mesh[],
+  entry: THREE.Vector3,
+  entryNormal: THREE.Vector3,
+  dir: THREE.Vector3,
+) {
+  if (!meshes.length) return null;
+  _origin.copy(entry).addScaledVector(entryNormal, 0.004);
+  _ray.set(_origin, dir);
+  _ray.near = 0.002;
+  _ray.far = 0.55;
+  const saved: { mat: THREE.Material; side: THREE.Side }[] = [];
+  for (const mesh of meshes) {
+    const mats = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
+    for (const mat of mats) {
+      if (!mat) continue;
+      saved.push({ mat, side: mat.side });
+      mat.side = THREE.DoubleSide;
+    }
+  }
+  const hits = _ray.intersectObjects(meshes, false);
+  for (const s of saved) s.mat.side = s.side;
+  if (hits.length < 2) return null;
+  const last = hits[hits.length - 1]!;
+  if (last.distance < 0.07 || !last.face) return null;
+  const n = last.face.normal.clone().transformDirection(last.object.matrixWorld).normalize();
+  if (n.dot(dir) < 0) n.negate();
+  return {
+    point: last.point.clone(),
+    normal: n,
+    mesh: last.object as THREE.Mesh,
+    face: last.faceIndex ?? -1,
+    dist: last.distance,
+  };
+}
+
 function nearestSkin(meshes: THREE.Mesh[], point: THREE.Vector3) {
   let best: THREE.Mesh | null = null;
   let bestD = 1e9;
@@ -617,13 +722,16 @@ function buildSkinPatch(
   normal: THREE.Vector3,
   dir: THREE.Vector3,
   faceIndex: number,
+  stampW: number,
+  stampH: number,
 ) {
   const geo = mesh.geometry as THREE.BufferGeometry;
   const pos = geo.getAttribute("position") as THREE.BufferAttribute;
   const arr = pos.array as Float32Array;
   const index = geo.getIndex();
   const triCount = index ? index.count / 3 : Math.floor(pos.count / 3);
-  const r2 = 0.046 * 0.046;
+  const rad = Math.max(stampW, stampH) * 0.92 + 0.01;
+  const r2 = rad * rad;
   const faces: number[] = [];
   const vertAt = (f: number, k: number) => {
     if (index) return index.getX(f * 3 + k);
@@ -664,7 +772,7 @@ function buildSkinPatch(
     const dx = x - center.x;
     const dy = y - center.y;
     const dz = z - center.z;
-    uvs.push((dx * _t.x + dy * _t.y + dz * _t.z) / 0.052, (dx * _b.x + dy * _b.y + dz * _b.z) / 0.084);
+    uvs.push((dx * _t.x + dy * _t.y + dz * _t.z) / stampW, (dx * _b.x + dy * _b.y + dz * _b.z) / stampH);
     return id;
   };
   const idx: number[] = [];
@@ -809,6 +917,9 @@ function prepareBayonet(src: THREE.Object3D, totalLen: number) {
   } else {
     geo.computeVertexNormals();
   }
+  const nrmNow = geo.getAttribute("normal") as THREE.BufferAttribute | undefined;
+  rollEdgeToZ(arr, count, nrmNow ? (nrmNow.array as Float32Array) : undefined, totalLen);
+  if (nrmNow) nrmNow.needsUpdate = true;
   pos.needsUpdate = true;
   geo.computeBoundingBox();
   geo.computeBoundingSphere();
@@ -831,6 +942,66 @@ function prepareBayonet(src: THREE.Object3D, totalLen: number) {
   mesh.name = "bayonet";
   holder.add(mesh);
   return { root: holder, totalLen, bladeLen: detectBladeLen(arr, count, totalLen) };
+}
+
+function rollEdgeToZ(arr: Float32Array, count: number, nrm: Float32Array | undefined, totalLen: number) {
+  const y0 = totalLen * 0.58;
+  const y1 = totalLen * 0.92;
+  let mx = 0;
+  let mz = 0;
+  let n = 0;
+  for (let i = 0; i < count; i++) {
+    const y = arr[i * 3 + 1]!;
+    if (y < y0 || y > y1) continue;
+    mx += arr[i * 3]!;
+    mz += arr[i * 3 + 2]!;
+    n++;
+  }
+  if (n < 12) return;
+  mx /= n;
+  mz /= n;
+  let cxx = 0;
+  let czz = 0;
+  let cxz = 0;
+  for (let i = 0; i < count; i++) {
+    const y = arr[i * 3 + 1]!;
+    if (y < y0 || y > y1) continue;
+    const dx = arr[i * 3]! - mx;
+    const dz = arr[i * 3 + 2]! - mz;
+    cxx += dx * dx;
+    czz += dz * dz;
+    cxz += dx * dz;
+  }
+  const ang = 0.5 * Math.atan2(2 * cxz, cxx - czz);
+  applyYaw(arr, count, nrm, Math.PI / 2 - ang);
+  let maxXPos = 0;
+  let maxXNeg = 0;
+  for (let i = 0; i < count; i++) {
+    const y = arr[i * 3 + 1]!;
+    if (y < y0 || y > y1) continue;
+    const ax = Math.abs(arr[i * 3]! - mx);
+    if (arr[i * 3 + 2]! >= mz) maxXPos = Math.max(maxXPos, ax);
+    else maxXNeg = Math.max(maxXNeg, ax);
+  }
+  if (maxXPos > maxXNeg + 1e-5) applyYaw(arr, count, nrm, Math.PI);
+}
+
+function applyYaw(arr: Float32Array, count: number, nrm: Float32Array | undefined, rot: number) {
+  const c = Math.cos(rot);
+  const s = Math.sin(rot);
+  for (let i = 0; i < count; i++) {
+    const x = arr[i * 3]!;
+    const z = arr[i * 3 + 2]!;
+    arr[i * 3] = c * x - s * z;
+    arr[i * 3 + 2] = s * x + c * z;
+  }
+  if (!nrm) return;
+  for (let i = 0; i < nrm.length / 3; i++) {
+    const x = nrm[i * 3]!;
+    const z = nrm[i * 3 + 2]!;
+    nrm[i * 3] = c * x - s * z;
+    nrm[i * 3 + 2] = s * x + c * z;
+  }
 }
 
 function detectBladeLen(arr: Float32Array, count: number, totalLen: number) {

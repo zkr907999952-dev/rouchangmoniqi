@@ -5,7 +5,7 @@ const page = await browser.newPage({ viewport: { width: 1280, height: 800 } });
 page.setDefaultTimeout(120000);
 page.on("pageerror", (e) => console.log("PAGEERROR", e.message.slice(0, 400)));
 
-await page.goto(`http://127.0.0.1:8080/?w=${Date.now()}`, { waitUntil: "domcontentloaded", timeout: 60000 });
+await page.goto(`http://127.0.0.1:8080/?w3=${Date.now()}`, { waitUntil: "domcontentloaded", timeout: 60000 });
 let ready = false;
 for (let i = 0; i < 90; i++) {
   const txt = await page.locator("body").innerText();
@@ -20,32 +20,32 @@ for (let i = 0; i < 90; i++) {
 }
 console.log("READY", ready);
 
-const deep = await page.evaluate(() => {
+await page.evaluate(() => {
   const v = window.__vela;
   v.setBayonetKind?.("short");
-  const r = v.driveBayonet?.(0.14);
+  v.driveBayonet?.(0);
+  v.frameBelly?.();
+});
+await page.waitForTimeout(400);
+await page.screenshot({ path: "/workspace/screenshots/bayonet-hover.png" });
+
+await page.evaluate(() => window.__vela?.driveBayonet(0.14));
+await page.waitForTimeout(400);
+await page.screenshot({ path: "/workspace/screenshots/bayonet-wounds.png" });
+
+const long = await page.evaluate(() => {
+  const v = window.__vela;
+  v.setBayonetKind?.("long");
+  const r = v.driveBayonet?.(1);
   v.frameBelly?.();
   return r;
 });
-console.log("DEEP", JSON.stringify(deep));
-await page.waitForTimeout(600);
-const dump = await page.evaluate(() => window.__vela?.bayonet);
-console.log("DUMP", JSON.stringify(dump));
-await page.screenshot({ path: "/workspace/screenshots/bayonet-wounds.png" });
+console.log("LONG_DEEP", JSON.stringify(long));
+await page.waitForTimeout(500);
+await page.screenshot({ path: "/workspace/screenshots/bayonet-long-deep.png" });
 
-const xray = await page.evaluate(() => {
-  const v = window.__vela;
-  // raise xray via store if possible
-  return v.bayonet;
-});
-console.log("XRAY", JSON.stringify(xray));
-
-await page.getByText("腹部半透明", { exact: false }).first().isVisible().catch(() => false);
-await page.evaluate(() => {
-  const st = window.__vela;
-  st.driveBayonet?.(0.14);
-});
-await page.waitForTimeout(300);
-await page.screenshot({ path: "/workspace/screenshots/bayonet-stab.png" });
+await page.evaluate(() => window.__vela?.frameBack?.());
+await page.waitForTimeout(400);
+await page.screenshot({ path: "/workspace/screenshots/bayonet-long-back.png" });
 
 await browser.close();

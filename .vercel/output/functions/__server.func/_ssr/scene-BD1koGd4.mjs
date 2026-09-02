@@ -1,9 +1,9 @@
 import { i as __toESM } from "../_runtime.mjs";
 import { a as require_jsx_runtime, o as require_react } from "../_libs/@radix-ui/react-collection+[...].mjs";
-import { B as MathUtils, Ct as Vector2, H as Mesh, K as MeshStandardMaterial, R as MOUSE, Tt as Vector4, U as MeshBasicMaterial, V as Matrix4, W as MeshLambertMaterial, _ as Euler, _t as SphereGeometry, bt as TOUCH, d as BufferGeometry, dt as RingGeometry, f as CanvasTexture, ft as SRGBColorSpace, g as DynamicDrawUsage, i as useThree, j as LineSegments, k as LineBasicMaterial, l as Box3, lt as Ray, m as Color, n as Canvas, nt as PlaneGeometry, p as ClampToEdgeWrapping, r as useFrame, rt as PointLight, st as Quaternion, t as OrbitControls, tt as Plane, u as BufferAttribute, vt as Spherical, wt as Vector3, y as Group } from "../_libs/@react-three/drei+[...].mjs";
+import { B as MathUtils, Et as Vector4, H as Mesh, K as MeshStandardMaterial, R as MOUSE, Tt as Vector3, U as MeshBasicMaterial, V as Matrix4, W as MeshLambertMaterial, _ as Euler, d as BufferGeometry, f as CanvasTexture, ft as RingGeometry, g as DynamicDrawUsage, i as useThree, j as LineSegments, k as LineBasicMaterial, l as Box3, lt as Ray, m as Color, n as Canvas, nt as PlaneGeometry, p as ClampToEdgeWrapping, pt as SRGBColorSpace, r as useFrame, rt as PointLight, st as Quaternion, t as OrbitControls, tt as Plane, u as BufferAttribute, ut as Raycaster, vt as SphereGeometry, wt as Vector2, xt as TOUCH, y as Group, yt as Spherical } from "../_libs/@react-three/drei+[...].mjs";
 import { n as SkeletonUtils } from "../_libs/three-stdlib.mjs";
-import { n as useStudio, r as SoftSkeleton } from "./routes-CgjXBDin.mjs";
-//#region node_modules/.nitro/vite/services/ssr/assets/scene-rDu4aqis.js
+import { n as useStudio, r as SoftSkeleton } from "./routes-CsyOEWwW.mjs";
+//#region node_modules/.nitro/vite/services/ssr/assets/scene-BD1koGd4.js
 var import_react = /* @__PURE__ */ __toESM(require_react());
 var import_jsx_runtime = require_jsx_runtime();
 function addEdge(adj, slot, a, b, len) {
@@ -1091,6 +1091,8 @@ var _down = new Vector3(0, -1, 0);
 var _xA = new Vector3();
 var _zA = new Vector3();
 var _mat = new Matrix4();
+var _ray$1 = new Raycaster();
+var _origin = new Vector3();
 var _t = new Vector3();
 var _b = new Vector3();
 var SHORT_TOTAL = .248;
@@ -1146,6 +1148,8 @@ var BayonetPlay = class {
 	skinHit = null;
 	skinFace = -1;
 	xrayValue = 0;
+	backSpawned = false;
+	exitHit = null;
 	hitAcc = 0;
 	autoPhase = "idle";
 	holdT = 0;
@@ -1235,7 +1239,24 @@ var BayonetPlay = class {
 			const p = data.data;
 			for (let i = 0; i < p.length; i += 4) {
 				const m = Math.max(p[i], p[i + 1], p[i + 2]);
-				p[i + 3] = m < 10 ? 0 : m < 36 ? (m - 10) / 26 * 255 : 255;
+				p[i + 3] = m < 10 ? 0 : m < 40 ? (m - 10) / 30 * 255 : 255;
+			}
+			const tw = Math.floor(c.width / 2);
+			const th = Math.floor(c.height / 2);
+			const padX = Math.max(8, tw * .2);
+			const padY = Math.max(8, th * .2);
+			for (let ty = 0; ty < 2; ty++) for (let tx = 0; tx < 2; tx++) for (let y = 0; y < th; y++) for (let x = 0; x < tw; x++) {
+				const fx = Math.min(x, tw - 1 - x) / padX;
+				const fy = Math.min(y, th - 1 - y) / padY;
+				const ex = fx <= 0 ? 0 : fx >= 1 ? 1 : fx * fx * (3 - 2 * fx);
+				const ey = fy <= 0 ? 0 : fy >= 1 ? 1 : fy * fy * (3 - 2 * fy);
+				const nx = (x + .5) / tw - .5;
+				const ny = (y + .5) / th - .5;
+				const r = Math.hypot(nx, ny) * 2.05;
+				const rad = r <= .32 ? 1 : r >= .78 ? 0 : 1 - (r - .32) / .46;
+				const srad = rad * rad * (3 - 2 * rad);
+				const i = ((ty * th + y) * c.width + (tx * tw + x)) * 4;
+				p[i + 3] = p[i + 3] * ex * ey * srad;
 			}
 			ctx.putImageData(data, 0, 0);
 			const tex = new CanvasTexture(c);
@@ -1266,6 +1287,8 @@ var BayonetPlay = class {
 		this.dir.copy(this.restAxis);
 		this.skinHit = mesh ?? null;
 		this.skinFace = faceIndex ?? -1;
+		this.backSpawned = false;
+		this.exitHit = null;
 		const dist = this.totalLen - this.rawPen;
 		this.handle.copy(this.entry).addScaledVector(this.dir, -dist);
 		this.layout();
@@ -1431,6 +1454,7 @@ var BayonetPlay = class {
 			this.spawnWound();
 		}
 		this.penetration = this.punctured ? Math.max(0, this.rawPen) : 0;
+		if (this.kind === "long" && this.punctured && !this.backSpawned) this.trySpawnExitWound();
 	}
 	layout() {
 		this.tip.copy(this.handle).addScaledVector(this.dir, this.totalLen);
@@ -1481,11 +1505,23 @@ var BayonetPlay = class {
 		}
 	}
 	spawnWound() {
-		const host = this.skinHit ?? nearestSkin(this.skinMeshes, this.entry);
+		const long = this.kind === "long";
+		this.spawnWoundAt(this.entry, this.entryNormal, this.skinHit, this.skinFace, long ? .038 : .05, long ? .054 : .082);
+	}
+	trySpawnExitWound() {
+		if (!this.exitHit) this.exitHit = findSkinExit(this.skinMeshes, this.entry, this.entryNormal, this.dir);
+		const hit = this.exitHit;
+		if (!hit) return;
+		if (this.rawPen < hit.dist - .005) return;
+		this.backSpawned = true;
+		this.spawnWoundAt(hit.point, hit.normal, hit.mesh, hit.face, .03, .042);
+	}
+	spawnWoundAt(center, normal, mesh, faceIndex, stampW, stampH) {
+		const host = mesh ?? nearestSkin(this.skinMeshes, center);
 		if (!host) return;
 		const srcPos = host.geometry.getAttribute("position");
 		if (!srcPos || !(srcPos.array instanceof Float32Array)) return;
-		const patch = buildSkinPatch(host, this.entry, this.entryNormal, this.dir, this.skinFace);
+		const patch = buildSkinPatch(host, center, normal, this.dir, faceIndex, stampW, stampH);
 		if (!patch) return;
 		const tile = Math.random() * 4 | 0;
 		const col = tile & 1;
@@ -1515,7 +1551,7 @@ var BayonetPlay = class {
 			polygonOffsetFactor: -8,
 			polygonOffsetUnits: -8,
 			toneMapped: false,
-			side: 0
+			side: 2
 		});
 		const { y0, y1, xMax, zFront } = this.xray;
 		mat.onBeforeCompile = (shader) => {
@@ -1538,23 +1574,26 @@ float xrayHole() {
 }`).replace("#include <map_fragment>", `#ifdef USE_MAP
            if (vMapUv.x < 0.0 || vMapUv.x > 1.0 || vMapUv.y < 0.0 || vMapUv.y > 1.0) discard;
            vec4 sampledDiffuseColor = texture2D(map, uTile.xy + vMapUv * uTile.zw);
-           if (sampledDiffuseColor.a < 0.08) discard;
+           float fx = smoothstep(0.0, 0.22, vMapUv.x) * smoothstep(0.0, 0.22, 1.0 - vMapUv.x);
+           float fy = smoothstep(0.0, 0.22, vMapUv.y) * smoothstep(0.0, 0.22, 1.0 - vMapUv.y);
+           float rad = 1.0 - smoothstep(0.28, 0.7, length(vMapUv - vec2(0.5)) * 1.95);
+           sampledDiffuseColor.a *= fx * fy * rad;
+           if (sampledDiffuseColor.a < 0.04) discard;
            diffuseColor *= sampledDiffuseColor;
-           #endif`).replace("#include <dithering_fragment>", `if (!gl_FrontFacing) discard;
-           float hole = xrayHole();
+           #endif`).replace("#include <dithering_fragment>", `float hole = xrayHole();
            gl_FragColor.a *= mix(1.0, 0.06, pow(hole, 0.68));
            if (gl_FragColor.a < 0.04) discard;
            #include <dithering_fragment>`);
 			mat.userData.shader = shader;
 		};
 		mat.needsUpdate = true;
-		const mesh = new Mesh(patch.geo, mat);
-		mesh.frustumCulled = false;
-		mesh.renderOrder = 8;
-		mesh.raycast = () => {};
-		this.wounds.add(mesh);
+		const woundMesh = new Mesh(patch.geo, mat);
+		woundMesh.frustumCulled = false;
+		woundMesh.renderOrder = 8;
+		woundMesh.raycast = () => {};
+		this.wounds.add(woundMesh);
 		this.patches.push({
-			mesh,
+			mesh: woundMesh,
 			src: srcPos,
 			map: patch.map,
 			pos: patch.pos
@@ -1620,6 +1659,39 @@ float xrayHole() {
 		}
 	}
 };
+function findSkinExit(meshes, entry, entryNormal, dir) {
+	if (!meshes.length) return null;
+	_origin.copy(entry).addScaledVector(entryNormal, .004);
+	_ray$1.set(_origin, dir);
+	_ray$1.near = .002;
+	_ray$1.far = .55;
+	const saved = [];
+	for (const mesh of meshes) {
+		const mats = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
+		for (const mat of mats) {
+			if (!mat) continue;
+			saved.push({
+				mat,
+				side: mat.side
+			});
+			mat.side = 2;
+		}
+	}
+	const hits = _ray$1.intersectObjects(meshes, false);
+	for (const s of saved) s.mat.side = s.side;
+	if (hits.length < 2) return null;
+	const last = hits[hits.length - 1];
+	if (last.distance < .07 || !last.face) return null;
+	const n = last.face.normal.clone().transformDirection(last.object.matrixWorld).normalize();
+	if (n.dot(dir) < 0) n.negate();
+	return {
+		point: last.point.clone(),
+		normal: n,
+		mesh: last.object,
+		face: last.faceIndex ?? -1,
+		dist: last.distance
+	};
+}
 function nearestSkin(meshes, point) {
 	let best = null;
 	let bestD = 1e9;
@@ -1641,13 +1713,14 @@ function nearestSkin(meshes, point) {
 	}
 	return best;
 }
-function buildSkinPatch(mesh, center, normal, dir, faceIndex) {
+function buildSkinPatch(mesh, center, normal, dir, faceIndex, stampW, stampH) {
 	const geo = mesh.geometry;
 	const pos = geo.getAttribute("position");
 	const arr = pos.array;
 	const index = geo.getIndex();
 	const triCount = index ? index.count / 3 : Math.floor(pos.count / 3);
-	const r2 = .002116;
+	const rad = Math.max(stampW, stampH) * .92 + .01;
+	const r2 = rad * rad;
 	const faces = [];
 	const vertAt = (f, k) => {
 		if (index) return index.getX(f * 3 + k);
@@ -1687,7 +1760,7 @@ function buildSkinPatch(mesh, center, normal, dir, faceIndex) {
 		const dx = x - center.x;
 		const dy = y - center.y;
 		const dz = z - center.z;
-		uvs.push((dx * _t.x + dy * _t.y + dz * _t.z) / .052, (dx * _b.x + dy * _b.y + dz * _b.z) / .084);
+		uvs.push((dx * _t.x + dy * _t.y + dz * _t.z) / stampW, (dx * _b.x + dy * _b.y + dz * _b.z) / stampH);
 		return id;
 	};
 	const idx = [];
@@ -1822,6 +1895,9 @@ function prepareBayonet(src, totalLen) {
 		}
 		nrm.needsUpdate = true;
 	} else geo.computeVertexNormals();
+	const nrmNow = geo.getAttribute("normal");
+	rollEdgeToZ(arr, count, nrmNow ? nrmNow.array : void 0, totalLen);
+	if (nrmNow) nrmNow.needsUpdate = true;
 	pos.needsUpdate = true;
 	geo.computeBoundingBox();
 	geo.computeBoundingSphere();
@@ -1847,6 +1923,64 @@ function prepareBayonet(src, totalLen) {
 		totalLen,
 		bladeLen: detectBladeLen(arr, count, totalLen)
 	};
+}
+function rollEdgeToZ(arr, count, nrm, totalLen) {
+	const y0 = totalLen * .58;
+	const y1 = totalLen * .92;
+	let mx = 0;
+	let mz = 0;
+	let n = 0;
+	for (let i = 0; i < count; i++) {
+		const y = arr[i * 3 + 1];
+		if (y < y0 || y > y1) continue;
+		mx += arr[i * 3];
+		mz += arr[i * 3 + 2];
+		n++;
+	}
+	if (n < 12) return;
+	mx /= n;
+	mz /= n;
+	let cxx = 0;
+	let czz = 0;
+	let cxz = 0;
+	for (let i = 0; i < count; i++) {
+		const y = arr[i * 3 + 1];
+		if (y < y0 || y > y1) continue;
+		const dx = arr[i * 3] - mx;
+		const dz = arr[i * 3 + 2] - mz;
+		cxx += dx * dx;
+		czz += dz * dz;
+		cxz += dx * dz;
+	}
+	const ang = .5 * Math.atan2(2 * cxz, cxx - czz);
+	applyYaw(arr, count, nrm, Math.PI / 2 - ang);
+	let maxXPos = 0;
+	let maxXNeg = 0;
+	for (let i = 0; i < count; i++) {
+		const y = arr[i * 3 + 1];
+		if (y < y0 || y > y1) continue;
+		const ax = Math.abs(arr[i * 3] - mx);
+		if (arr[i * 3 + 2] >= mz) maxXPos = Math.max(maxXPos, ax);
+		else maxXNeg = Math.max(maxXNeg, ax);
+	}
+	if (maxXPos > maxXNeg + 1e-5) applyYaw(arr, count, nrm, Math.PI);
+}
+function applyYaw(arr, count, nrm, rot) {
+	const c = Math.cos(rot);
+	const s = Math.sin(rot);
+	for (let i = 0; i < count; i++) {
+		const x = arr[i * 3];
+		const z = arr[i * 3 + 2];
+		arr[i * 3] = c * x - s * z;
+		arr[i * 3 + 2] = s * x + c * z;
+	}
+	if (!nrm) return;
+	for (let i = 0; i < nrm.length / 3; i++) {
+		const x = nrm[i * 3];
+		const z = nrm[i * 3 + 2];
+		nrm[i * 3] = c * x - s * z;
+		nrm[i * 3 + 2] = s * x + c * z;
+	}
 }
 function detectBladeLen(arr, count, totalLen) {
 	const bins = 40;
@@ -3399,6 +3533,14 @@ function FittedFigure({ character, intestines, pelvis, arm, bayonet, bayonetLong
 		if (vela) {
 			vela.frameBelly = () => {
 				camera.position.set(.12, 1.05, .68);
+				camera.lookAt(setup.navel.x, setup.navel.y, setup.navel.z);
+				if (controlsRef.current) {
+					controlsRef.current.target.copy(setup.navel);
+					controlsRef.current.update();
+				}
+			};
+			vela.frameBack = () => {
+				camera.position.set(-.08, 1.08, -.55);
 				camera.lookAt(setup.navel.x, setup.navel.y, setup.navel.z);
 				if (controlsRef.current) {
 					controlsRef.current.target.copy(setup.navel);

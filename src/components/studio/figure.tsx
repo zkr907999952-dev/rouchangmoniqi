@@ -1672,6 +1672,14 @@ function FittedFigure({
           controlsRef.current.update();
         }
       };
+      vela.frameBack = () => {
+        camera.position.set(-0.08, 1.08, -0.55);
+        camera.lookAt(setup.navel.x, setup.navel.y, setup.navel.z);
+        if (controlsRef.current) {
+          controlsRef.current.target.copy(setup.navel);
+          controlsRef.current.update();
+        }
+      };
       vela.tiltBayonet = (x: number, y: number, z: number) => {
         setup.knife.dragTo(new THREE.Vector3(x, y, z));
         const ang = THREE.MathUtils.radToDeg(setup.knife.dir.angleTo(setup.knife.restAxis));
