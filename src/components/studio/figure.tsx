@@ -1136,10 +1136,12 @@ function FittedFigure({
   const grab = useRef<{
     active: boolean;
     mode: "pose" | "drag" | "fist" | "bayonet";
+    poseKind?: "ik" | "rotate" | "move";
     origin: THREE.Vector3;
     planePoint: THREE.Vector3;
     normal: THREE.Vector3;
     bone: number;
+    axis?: THREE.Vector3;
   } | null>(null);
   const energyTick = useRef(0);
   const gutExc = useRef(0);
@@ -1296,13 +1298,17 @@ function FittedFigure({
     const jointBuf = new Float32Array(skeleton.count * 3);
     const boneVis = new THREE.Group();
     boneVis.visible = false;
-    const jointGeo = new THREE.SphereGeometry(skeleton.count > 80 ? 0.007 : 0.014, 8, 8);
     const jointMat = new THREE.MeshBasicMaterial({ color: "#d4b5a0", depthTest: false, transparent: true, opacity: 0.95 });
+    const jointSel = new THREE.MeshBasicMaterial({ color: "#7ec8e3", depthTest: false, transparent: true, opacity: 1 });
     const joints: THREE.Mesh[] = [];
+    const majorGeo = new THREE.SphereGeometry(0.02, 12, 12);
+    const fingerGeo = new THREE.SphereGeometry(0.012, 10, 10);
     for (let i = 0; i < skeleton.count; i++) {
-      const m = new THREE.Mesh(jointGeo, jointMat);
+      const finger = /Thumb|Index|Middle|Ring|Pinky|hair/i.test(skeleton.names[i]!);
+      const m = new THREE.Mesh(finger ? fingerGeo : majorGeo, jointMat);
       m.frustumCulled = false;
       m.renderOrder = 30;
+      m.userData.boneIndex = i;
       boneVis.add(m);
       joints.push(m);
     }
@@ -1316,6 +1322,53 @@ function FittedFigure({
     boneLines.frustumCulled = false;
     boneLines.renderOrder = 29;
     boneVis.add(boneLines);
+
+    const gizmo = new THREE.Group();
+    gizmo.visible = false;
+    const ringGeo = new THREE.TorusGeometry(0.12, 0.009, 8, 56);
+    const arrowBody = new THREE.CylinderGeometry(0.006, 0.006, 0.1, 8);
+    const arrowHead = new THREE.ConeGeometry(0.016, 0.032, 10);
+    const mkMat = (c: string) =>
+      new THREE.MeshBasicMaterial({ color: c, depthTest: false, transparent: true, opacity: 0.95 });
+    const axisDefs: { key: "x" | "y" | "z"; color: string; eul: THREE.Euler }[] = [
+      { key: "x", color: "#e25d5d", eul: new THREE.Euler(0, Math.PI / 2, 0) },
+      { key: "y", color: "#5dcc7a", eul: new THREE.Euler(Math.PI / 2, 0, 0) },
+      { key: "z", color: "#5da8e2", eul: new THREE.Euler(0, 0, 0) },
+    ];
+    const rotRings: THREE.Mesh[] = [];
+    const moveArrows: THREE.Group[] = [];
+    for (const ax of axisDefs) {
+      const ring = new THREE.Mesh(ringGeo, mkMat(ax.color));
+      ring.rotation.copy(ax.eul);
+      ring.userData.gizmo = `r${ax.key}`;
+      ring.userData.axis = ax.key;
+      ring.frustumCulled = false;
+      ring.renderOrder = 41;
+      gizmo.add(ring);
+      rotRings.push(ring);
+      const grp = new THREE.Group();
+      grp.userData.gizmo = `m${ax.key}`;
+      grp.userData.axis = ax.key;
+      const body = new THREE.Mesh(arrowBody, mkMat(ax.color));
+      const head = new THREE.Mesh(arrowHead, mkMat(ax.color));
+      body.position.y = 0.07;
+      head.position.y = 0.13;
+      body.userData.gizmo = `m${ax.key}`;
+      body.userData.axis = ax.key;
+      head.userData.gizmo = `m${ax.key}`;
+      head.userData.axis = ax.key;
+      grp.add(body);
+      grp.add(head);
+      if (ax.key === "x") grp.rotation.z = -Math.PI / 2;
+      if (ax.key === "z") grp.rotation.x = Math.PI / 2;
+      grp.traverse((o) => {
+        (o as THREE.Mesh).frustumCulled = false;
+        (o as THREE.Mesh).renderOrder = 42;
+      });
+      gizmo.add(grp);
+      moveArrows.push(grp);
+    }
+    boneVis.add(gizmo);
     root.add(boneVis);
     for (const v of weightViews) v.orig = v.mesh.material;
 
@@ -1385,6 +1438,11 @@ function FittedFigure({
       weightViews,
       boneVis,
       joints,
+      jointMat,
+      jointSel,
+      gizmo,
+      rotRings,
+      moveArrows,
       boneLines,
       jointBuf,
     };
@@ -1546,7 +1604,15 @@ function FittedFigure({
             s.setBayonetPen(t);
           }
         } else if (grab.current.mode === "pose") {
-          setup.skeleton.setPoseDrag(bone, o.x, o.y, o.z, _target.x, _target.y, _target.z);
+          const kind = grab.current.poseKind ?? "ik";
+          if (kind === "rotate" && grab.current.axis) {
+            _plane.setFromNormalAndCoplanarPoint(grab.current.axis, setup.skeleton.bonePos(bone));
+            if (_ray.intersectPlane(_plane, _target)) setup.skeleton.updateRotateDrag(_target);
+          } else if (kind === "move" && grab.current.axis) {
+            if (_ray.intersectPlane(_plane, _target)) setup.skeleton.updateMoveDrag(_target);
+          } else {
+            setup.skeleton.setPoseDrag(bone, o.x, o.y, o.z, _target.x, _target.y, _target.z);
+          }
         } else {
           setup.skeleton.setTissueDrag(o.x, o.y, o.z, _target.x, _target.y, _target.z, 0.16);
         }
@@ -1712,15 +1778,29 @@ function FittedFigure({
       });
     }
 
-    setup.boneVis.visible = s.showLattice;
-    if (s.showLattice) {
+    const poseOn = s.interactMode === "pose";
+    setup.boneVis.visible = s.showLattice || poseOn;
+    if (setup.boneVis.visible) {
       const jp = setup.skeleton.jointPositions(setup.jointBuf);
+      const sel = s.selectedBone;
       for (let i = 0; i < setup.joints.length; i++) {
         setup.joints[i]!.position.set(jp[i * 3]!, jp[i * 3 + 1]!, jp[i * 3 + 2]!);
+        setup.joints[i]!.material = i === sel ? setup.jointSel : setup.jointMat;
       }
       const lp = setup.boneLines.geometry.getAttribute("position") as THREE.BufferAttribute;
       setup.skeleton.writeBoneLines(lp.array as Float32Array);
       lp.needsUpdate = true;
+      const gz = setup.gizmo;
+      if (poseOn && sel >= 0 && s.poseEditMode !== "ik") {
+        gz.visible = true;
+        gz.position.copy(setup.skeleton.bonePos(sel));
+        gz.quaternion.copy(setup.skeleton.boneRot(sel));
+        const rot = s.poseEditMode === "rotate";
+        for (const r of setup.rotRings) r.visible = rot;
+        for (const a of setup.moveArrows) a.visible = !rot;
+      } else {
+        gz.visible = false;
+      }
     }
     for (const v of setup.weightViews) {
       v.mesh.material = s.showWeights ? v.weight : v.orig;
@@ -1883,14 +1963,23 @@ function FittedFigure({
     return g;
   }, [setup]);
 
-  const beginGrab = (point: THREE.Vector3, normal: THREE.Vector3, mode: "pose" | "drag" | "fist" | "bayonet") => {
+  const beginGrab = (
+    point: THREE.Vector3,
+    normal: THREE.Vector3,
+    mode: "pose" | "drag" | "fist" | "bayonet",
+    bone = -1,
+    poseKind?: "ik" | "rotate" | "move",
+    axis?: THREE.Vector3,
+  ) => {
     grab.current = {
       active: true,
       mode,
+      poseKind,
       origin: point.clone(),
       planePoint: point.clone(),
       normal: normal.clone().normalize(),
-      bone: setup.skeleton.pickBone(point.x, point.y, point.z),
+      bone: bone >= 0 ? bone : setup.skeleton.pickBone(point.x, point.y, point.z),
+      axis: axis?.clone(),
     };
     useStudio.getState().setGrabbing(true);
     gl.domElement.style.cursor = "grabbing";
@@ -1905,7 +1994,8 @@ function FittedFigure({
     if (e.button !== 0 && e.nativeEvent.button !== 0) return;
     e.stopPropagation();
     _hit.copy(e.point);
-    const mode = useStudio.getState().interactMode;
+    const st = useStudio.getState();
+    const mode = st.interactMode;
     if (mode === "strike") {
       useStudio.getState().fireStrike([_hit.x, _hit.y, _hit.z]);
       return;
@@ -1931,7 +2021,6 @@ function FittedFigure({
         if (_normal.dot(_camDir) > 0) _normal.negate();
         setup.knife.pick(_hit, _normal, hit.object as THREE.Mesh, hit.faceIndex ?? -1);
         bayonetPenRef.current = 0;
-        const st = useStudio.getState();
         st.setBayonetHasEntry(true);
         st.setBayonetPen(0);
         if (st.bayonetAuto && !st.bayonetPump) setup.knife.beginAuto();
@@ -1944,7 +2033,43 @@ function FittedFigure({
       beginGrab(setup.knife.handle, _normal, "bayonet");
       return;
     }
-    beginGrab(_hit, _normal, mode === "pose" ? "pose" : "drag");
+    if (mode === "pose") {
+      camera.getWorldDirection(_camDir);
+      raycaster.setFromCamera(pointer, camera);
+      const gizHits = raycaster.intersectObjects([...setup.rotRings, ...setup.moveArrows], true);
+      const giz = gizHits.find((h) => h.object.userData.gizmo);
+      if (giz && st.selectedBone >= 0) {
+        const axisKey = giz.object.userData.axis as "x" | "y" | "z";
+        const local =
+          axisKey === "x" ? new THREE.Vector3(1, 0, 0) : axisKey === "y" ? new THREE.Vector3(0, 1, 0) : new THREE.Vector3(0, 0, 1);
+        const world = local.clone().applyQuaternion(setup.skeleton.boneRot(st.selectedBone)).normalize();
+        const joint = setup.skeleton.bonePos(st.selectedBone);
+        if (String(giz.object.userData.gizmo).startsWith("r")) {
+          _plane.setFromNormalAndCoplanarPoint(world, joint);
+          const hitp = raycaster.ray.intersectPlane(_plane, new THREE.Vector3()) ?? giz.point;
+          const dir = hitp.clone().sub(joint);
+          dir.sub(world.clone().multiplyScalar(dir.dot(world)));
+          if (dir.lengthSq() < 1e-8) dir.crossVectors(world, _camDir).normalize();
+          setup.skeleton.setRotateDrag(st.selectedBone, local, world, dir);
+          beginGrab(hitp, world, "pose", st.selectedBone, "rotate", world);
+        } else {
+          setup.skeleton.setMoveDrag(st.selectedBone, world, giz.point);
+          beginGrab(giz.point, _camDir.clone().negate(), "pose", st.selectedBone, "move", world);
+        }
+        return;
+      }
+      let bone = setup.skeleton.pickBoneByRay(raycaster.ray.origin, raycaster.ray.direction);
+      if (bone < 0) bone = setup.skeleton.pickBoneWorld(_hit.x, _hit.y, _hit.z);
+      if (bone < 0) return;
+      st.setSelectedBone(bone, setup.skeleton.names[bone]);
+      if (st.poseEditMode === "ik") {
+        const jp = setup.skeleton.bonePos(bone);
+        beginGrab(jp, _camDir.clone().negate(), "pose", bone, "ik");
+        setup.skeleton.setPoseDrag(bone, jp.x, jp.y, jp.z, jp.x, jp.y, jp.z);
+      }
+      return;
+    }
+    beginGrab(_hit, _normal, "drag");
   };
 
   const midY = (setup.y0 + setup.y1) * 0.5;

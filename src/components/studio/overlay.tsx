@@ -14,6 +14,8 @@ import {
   Repeat,
   RotateCcw,
   RotateCw,
+  Rotate3d,
+  Move,
   Scan,
   Settings2,
   Sword,
@@ -93,7 +95,10 @@ export function Overlay() {
   const abdomenXray = useStudio((s) => s.abdomenXray);
   const bedStance = useStudio((s) => s.bedStance);
   const interactMode = useStudio((s) => s.interactMode);
+  const poseEditMode = useStudio((s) => s.poseEditMode);
+  const selectedBoneName = useStudio((s) => s.selectedBoneName);
   const setInteractMode = useStudio((s) => s.setInteractMode);
+  const setPoseEditMode = useStudio((s) => s.setPoseEditMode);
   const grabbing = useStudio((s) => s.grabbing);
   const loading = useStudio((s) => s.loading);
   const loadProgress = useStudio((s) => s.loadProgress);
@@ -417,7 +422,7 @@ export function Overlay() {
           {panel === "interact" ? (
             <>
               <p className="mb-3 text-xs leading-relaxed text-muted">
-                左键点身体操作。拖拽捏软组织，姿势拉关节，击腹点击释放环状冲击，拳交拖动手臂沿大肠插入，刺刀点腹壁后拖角度与深度。
+                左键点身体操作。拖拽捏软组织；姿势可选拖动、关节旋转、节点移动；击腹点击释放环状冲击，拳交拖动手臂沿大肠插入，刺刀点腹壁后拖角度与深度。
               </p>
               <div className="grid grid-cols-2 gap-2">
                 <button
@@ -499,6 +504,44 @@ export function Overlay() {
                   长刺刀
                 </button>
               </div>
+
+              {interactMode === "pose" ? (
+                <div className="mt-3">
+                  <p className="mb-1.5 text-xs text-muted">姿势编辑</p>
+                  <div className="grid grid-cols-3 gap-1">
+                    {(
+                      [
+                        { id: "ik" as const, label: "拖动", icon: <Hand className="size-3.5" /> },
+                        { id: "rotate" as const, label: "关节旋转", icon: <Rotate3d className="size-3.5" /> },
+                        { id: "move" as const, label: "节点移动", icon: <Move className="size-3.5" /> },
+                      ] as const
+                    ).map((item) => (
+                      <button
+                        key={item.id}
+                        type="button"
+                        onClick={() => setPoseEditMode(item.id)}
+                        className={cn(
+                          "inline-flex h-10 items-center justify-center gap-1 rounded-md text-[11px] font-medium",
+                          poseEditMode === item.id
+                            ? "bg-accent text-accent-fg"
+                            : "border border-border bg-surface-2 text-muted hover:text-fg",
+                        )}
+                      >
+                        {item.icon}
+                        {item.label}
+                      </button>
+                    ))}
+                  </div>
+                  <p className="mt-2 text-xs leading-relaxed text-muted">
+                    {poseEditMode === "ik"
+                      ? "点关节或骨骼，拖末端位置。骨骼会跟着摆。"
+                      : poseEditMode === "rotate"
+                        ? "点关节后拖红/绿/蓝环，绕该轴旋转。"
+                        : "点关节后拖坐标轴，移动该节点。"}
+                    {selectedBoneName ? ` 当前：${selectedBoneName}` : ""}
+                  </p>
+                </div>
+              ) : null}
 
               {interactMode === "fist" ? (
                 <div className="mt-3">
@@ -801,7 +844,11 @@ export function Overlay() {
               <p className="mt-3 text-xs text-muted">
                 {grabbing
                   ? interactMode === "pose"
-                    ? "调姿中"
+                    ? poseEditMode === "rotate"
+                      ? "旋转关节"
+                      : poseEditMode === "move"
+                        ? "移动节点"
+                        : "调姿中"
                     : interactMode === "bayonet"
                       ? "拖刀中"
                       : "拖拽中"
@@ -920,7 +967,11 @@ export function Overlay() {
         <Hand className="size-3.5" />
         <span>
           {interactMode === "pose"
-            ? "姿势"
+            ? poseEditMode === "rotate"
+              ? "关节旋转"
+              : poseEditMode === "move"
+                ? "节点移动"
+                : "姿势拖动"
             : interactMode === "strike"
               ? "击腹"
               : interactMode === "fist"

@@ -59,10 +59,13 @@ export type SkinBinding = {
 };
 
 type Hold =
-  | { kind: "pose"; bone: number; gx: number; gy: number; gz: number; tx: number; ty: number; tz: number }
+  | { kind: "pose"; bone: number; tx: number; ty: number; tz: number }
+  | { kind: "rotate"; bone: number; axisLocal: THREE.Vector3; axisWorld: THREE.Vector3; startQ: THREE.Quaternion; startDir: THREE.Vector3 }
+  | { kind: "move"; bone: number; axisWorld: THREE.Vector3; startOff: THREE.Vector3; startHit: THREE.Vector3 }
   | { kind: "tissue"; gx: number; gy: number; gz: number; tx: number; ty: number; tz: number; radius: number };
 
 const _q = new THREE.Quaternion();
+const _q2 = new THREE.Quaternion();
 const _from = new THREE.Vector3();
 const _to = new THREE.Vector3();
 const _axis = new THREE.Vector3();
@@ -133,6 +136,7 @@ export class SoftSkeleton {
   private readonly wpos: THREE.Vector3[] = [];
   private readonly wrot: THREE.Quaternion[] = [];
   private readonly poseQ: THREE.Quaternion[] = [];
+  private readonly poseOff: THREE.Vector3[] = [];
   private readonly exprQ: THREE.Quaternion[] = [];
   private readonly exprOff: THREE.Vector3[] = [];
   private readonly off: THREE.Vector3[] = [];
@@ -198,6 +202,7 @@ export class SoftSkeleton {
       this.wpos.push(new THREE.Vector3(b.x, b.y, b.z));
       this.wrot.push(new THREE.Quaternion());
       this.poseQ.push(new THREE.Quaternion());
+      this.poseOff.push(new THREE.Vector3());
       this.exprQ.push(new THREE.Quaternion());
       this.exprOff.push(new THREE.Vector3());
     }
@@ -370,33 +375,116 @@ export class SoftSkeleton {
   }
 
   pickBone(x: number, y: number, z: number) {
-    let best = 1;
+    return this.pickBoneWorld(x, y, z);
+  }
+
+  pickBoneWorld(x: number, y: number, z: number) {
+    let best = -1;
     let bestS = Infinity;
     for (let b = 0; b < this.count; b++) {
-      if (/C_Hip_a|^hips$/.test(this.names[b]!)) continue;
-      const g = this.group[b];
-      if (y < 0.22 && g !== "foot" && !/UpperLeg|Foreleg|Shin|Thigh/.test(this.names[b]!)) continue;
-      if (y > this.headY - 0.04 && g !== "face" && g !== "hair" && !/head|neck/.test(this.names[b]!)) continue;
+      if (/C_Hip_a|^hips$|_Phy|_Spo/.test(this.names[b]!)) continue;
       const p = this.parent[b];
-      const bx = this.rest[b * 3]!;
-      const by = this.rest[b * 3 + 1]!;
-      const bz = this.rest[b * 3 + 2]!;
-      const d =
-        p < 0
-          ? Math.hypot(x - bx, y - by, z - bz)
-          : distToSeg(x, y, z, this.rest[p * 3]!, this.rest[p * 3 + 1]!, this.rest[p * 3 + 2]!, bx, by, bz);
-      let s = d / this.radius[b]!;
-      if (y < 0.2 && g === "foot") s *= 0.4;
+      const bx = this.wpos[b]!.x;
+      const by = this.wpos[b]!.y;
+      const bz = this.wpos[b]!.z;
+      let d = Math.hypot(x - bx, y - by, z - bz);
+      if (p >= 0) {
+        d = Math.min(
+          d,
+          distToSeg(x, y, z, this.wpos[p]!.x, this.wpos[p]!.y, this.wpos[p]!.z, bx, by, bz),
+        );
+      }
+      const rad = Math.max(0.022, this.radius[b]! * 1.8);
+      const s = d / rad;
       if (s < bestS) {
         bestS = s;
+        best = b;
+      }
+    }
+    return bestS < 2.4 ? best : -1;
+  }
+
+  pickBoneByRay(origin: THREE.Vector3, dir: THREE.Vector3) {
+    const d = dir.clone().normalize();
+    let best = -1;
+    let bestS = 0.036;
+    for (let b = 0; b < this.count; b++) {
+      if (/C_Hip_a|^hips$|_Phy|_Spo/.test(this.names[b]!)) continue;
+      const px = this.wpos[b]!.x - origin.x;
+      const py = this.wpos[b]!.y - origin.y;
+      const pz = this.wpos[b]!.z - origin.z;
+      const t = px * d.x + py * d.y + pz * d.z;
+      if (t < 0.02) continue;
+      const lx = origin.x + d.x * t - this.wpos[b]!.x;
+      const ly = origin.y + d.y * t - this.wpos[b]!.y;
+      const lz = origin.z + d.z * t - this.wpos[b]!.z;
+      const dist = Math.hypot(lx, ly, lz);
+      const rad = /Thumb|Index|Middle|Ring|Pinky|hair/i.test(this.names[b]!) ? 0.018 : 0.032;
+      if (dist < rad && dist < bestS) {
+        bestS = dist;
         best = b;
       }
     }
     return best;
   }
 
-  setPoseDrag(bone: number, gx: number, gy: number, gz: number, tx: number, ty: number, tz: number) {
-    this.hold = { kind: "pose", bone, gx, gy, gz, tx, ty, tz };
+  setPoseDrag(bone: number, _gx: number, _gy: number, _gz: number, tx: number, ty: number, tz: number) {
+    this.hold = { kind: "pose", bone, tx, ty, tz };
+  }
+
+  setRotateDrag(bone: number, axisLocal: THREE.Vector3, axisWorld: THREE.Vector3, startDir: THREE.Vector3) {
+    this.hold = {
+      kind: "rotate",
+      bone,
+      axisLocal: axisLocal.clone(),
+      axisWorld: axisWorld.clone().normalize(),
+      startQ: this.q[bone]!.clone(),
+      startDir: startDir.clone().normalize(),
+    };
+  }
+
+  updateRotateDrag(hit: THREE.Vector3) {
+    const h = this.hold;
+    if (!h || h.kind !== "rotate") return;
+    const p = this.wpos[h.bone]!;
+    _to.copy(hit).sub(p);
+    _to.sub(_axis.copy(h.axisWorld).multiplyScalar(_to.dot(h.axisWorld)));
+    if (_to.lengthSq() < 1e-8) return;
+    _to.normalize();
+    _from.copy(h.startDir);
+    const sign = _axis.copy(_from).cross(_to).dot(h.axisWorld) < 0 ? -1 : 1;
+    const ang = sign * _from.angleTo(_to);
+    this.q[h.bone]!.copy(h.startQ).multiply(_q2.setFromAxisAngle(h.axisLocal, ang));
+    this.q[h.bone]!.normalize();
+  }
+
+  setMoveDrag(bone: number, axisWorld: THREE.Vector3, startHit: THREE.Vector3) {
+    this.hold = {
+      kind: "move",
+      bone,
+      axisWorld: axisWorld.clone().normalize(),
+      startOff: this.off[bone]!.clone(),
+      startHit: startHit.clone(),
+    };
+  }
+
+  updateMoveDrag(hit: THREE.Vector3) {
+    const h = this.hold;
+    if (!h || h.kind !== "move") return;
+    _to.copy(hit).sub(h.startHit);
+    const dist = _to.dot(h.axisWorld);
+    const p = this.parent[h.bone];
+    _v.copy(h.axisWorld).multiplyScalar(dist);
+    if (p >= 0) _v.applyQuaternion(_q.copy(this.wrot[p]!).invert());
+    this.off[h.bone]!.copy(h.startOff).add(_v);
+  }
+
+  bonePos(i: number) {
+    return this.wpos[i]!;
+  }
+
+  boneRot(i: number) {
+    return this.wrot[i]!;
   }
 
   setTissueDrag(gx: number, gy: number, gz: number, tx: number, ty: number, tz: number, radius = 0.14) {
@@ -413,7 +501,10 @@ export class SoftSkeleton {
   }
 
   commitPose() {
-    for (let i = 0; i < this.count; i++) this.poseQ[i]!.copy(this.q[i]!);
+    for (let i = 0; i < this.count; i++) {
+      this.poseQ[i]!.copy(this.q[i]!);
+      this.poseOff[i]!.copy(this.off[i]!);
+    }
   }
 
   setExpression(id: ExpressionId) {
@@ -454,7 +545,11 @@ export class SoftSkeleton {
 
   setPose(id: PoseId) {
     this.pose = id;
-    for (let i = 0; i < this.count; i++) this.poseQ[i]!.identity();
+    for (let i = 0; i < this.count; i++) {
+      this.poseQ[i]!.identity();
+      this.poseOff[i]!.set(0, 0, 0);
+      this.off[i]!.set(0, 0, 0);
+    }
     const set = (name: string | RegExp, ex: number, ey: number, ez: number) => {
       const i = typeof name === "string" ? this.byName[name] : this.findIndex(name);
       if (i === undefined || i < 0) return;
@@ -505,6 +600,7 @@ export class SoftSkeleton {
       this.qv[i]!.set(0, 0, 0);
       this.off[i]!.set(0, 0, 0);
       this.poseQ[i]!.identity();
+      this.poseOff[i]!.set(0, 0, 0);
     }
     for (const b of this.bindings) {
       b.delta.fill(0);
@@ -575,15 +671,17 @@ export class SoftSkeleton {
     const d = Math.min(dt, 0.04);
     this.rebound = THREE.MathUtils.clamp(params.rebound, 0, 1);
     this.applyHoldPose();
-    const heldBone = this.hold?.kind === "pose" ? this.hold.bone : -1;
-    const heldParent = heldBone >= 0 ? this.parent[heldBone] : -1;
+    const h = this.hold;
+    const held = h && h.kind !== "tissue" ? h.bone : -1;
+    const heldParent = held >= 0 ? this.parent[held] : -1;
+    const heldGrand = heldParent >= 0 ? this.parent[heldParent] : -1;
     const stiff = 14 + params.stiffness * 18;
     const damp = 6 + params.damping * 7;
     const jiggle = 0.4 + params.jiggle * 0.85;
 
     for (let i = 0; i < this.count; i++) {
       const g = this.group[i];
-      const locked = i === heldBone || i === heldParent;
+      const locked = i === held || i === heldParent || i === heldGrand;
       const q = this.q[i]!;
       const qv = this.qv[i]!;
       const isFace = g === "face";
@@ -608,7 +706,7 @@ export class SoftSkeleton {
         q.premultiply(_q);
         q.normalize();
       }
-      const maxA = this.maxAng[i]!;
+      const maxA = locked ? 2.8 : this.maxAng[i]!;
       const aNow = 2 * Math.acos(Math.min(1, Math.abs(q.w)));
       if (aNow > maxA && aNow > 1e-5) q.slerp(IDENTITY, 1 - maxA / aNow);
     }
@@ -660,29 +758,38 @@ export class SoftSkeleton {
 
   private applyHoldPose() {
     const h = this.hold;
-    if (!h || h.kind !== "pose") return;
-    let b = h.bone;
-    const maxChain = this.group[h.bone] === "foot" ? 4 : 3;
-    for (let chain = 0; chain < maxChain && b >= 0; chain++) {
-      if (/C_Hip_a|^hips$/.test(this.names[b]!)) break;
-      const restx = this.rest[b * 3]!;
-      const resty = this.rest[b * 3 + 1]!;
-      const restz = this.rest[b * 3 + 2]!;
-      _from.set(h.gx - restx, h.gy - resty, h.gz - restz);
-      _to.set(h.tx - restx, h.ty - resty, h.tz - restz);
-      if (_from.lengthSq() < 1e-8 || _to.lengthSq() < 1e-8) {
-        b = this.parent[b]!;
-        continue;
-      }
-      _from.normalize();
-      _to.normalize();
-      _q.setFromUnitVectors(_from, _to);
-      const influence = chain === 0 ? 0.78 : chain === 1 ? 0.4 : 0.16;
-      this.q[b]!.slerp(_q, influence);
-      const ang = 2 * Math.acos(Math.min(1, Math.abs(this.q[b]!.w)));
-      if (ang > this.maxAng[b]!) this.q[b]!.slerp(IDENTITY, 1 - this.maxAng[b]! / ang);
-      b = this.parent[b]!;
+    if (!h || h.kind === "tissue" || h.kind === "rotate" || h.kind === "move") return;
+    const end = h.bone;
+    if (end < 0) return;
+    const target = _to.set(h.tx, h.ty, h.tz);
+    const rotators: number[] = [];
+    let p = this.parent[end];
+    for (let i = 0; i < 3 && p >= 0; i++) {
+      if (/C_Hip_a|^hips$/.test(this.names[p]!)) break;
+      rotators.push(p);
+      p = this.parent[p];
     }
+    if (!rotators.length && !/C_Hip_a|^hips$/.test(this.names[end]!)) rotators.push(end);
+    for (let pass = 0; pass < 2; pass++) {
+      for (const pivot of rotators) {
+        this.updateFK();
+        _from.copy(this.wpos[end]!).sub(this.wpos[pivot]!);
+        _v.copy(target).sub(this.wpos[pivot]!);
+        if (_from.lengthSq() < 1e-8 || _v.lengthSq() < 1e-8) continue;
+        _from.normalize();
+        _v.normalize();
+        _q.setFromUnitVectors(_from, _v);
+        const pp = this.parent[pivot];
+        if (pp >= 0) {
+          _q2.copy(this.wrot[pp]!).invert();
+          _q.premultiply(_q2);
+          _q.multiply(this.wrot[pp]!);
+        }
+        this.q[pivot]!.premultiply(_q);
+        this.q[pivot]!.normalize();
+      }
+    }
+    this.updateFK();
   }
 
   get hasDents() {
@@ -883,9 +990,9 @@ export class SoftSkeleton {
   private updateFK() {
     for (let i = 0; i < this.count; i++) {
       const p = this.parent[i];
-      const ox = this.exprOff[i]!.x;
-      const oy = this.exprOff[i]!.y;
-      const oz = this.exprOff[i]!.z;
+      const ox = this.exprOff[i]!.x + this.off[i]!.x;
+      const oy = this.exprOff[i]!.y + this.off[i]!.y;
+      const oz = this.exprOff[i]!.z + this.off[i]!.z;
       if (p < 0) {
         this.wrot[i]!.copy(this.q[i]!);
         this.wpos[i]!.set(this.rest[i * 3]! + ox, this.rest[i * 3 + 1]! + oy, this.rest[i * 3 + 2]! + oz);

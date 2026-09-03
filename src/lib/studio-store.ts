@@ -3,6 +3,7 @@ import type { ExpressionId, PoseId } from "@/lib/softbody/soft-skeleton";
 
 export type PresetId = "soft" | "firm" | "jelly" | "athletic";
 export type InteractMode = "drag" | "pose" | "strike" | "fist" | "bayonet";
+export type PoseEditMode = "ik" | "rotate" | "move";
 export type BayonetKind = "short" | "long";
 export type BedStance = "front" | "on" | "lie";
 
@@ -224,6 +225,9 @@ export const PRESETS: Record<
 type StudioState = StudioParams & {
   preset: PresetId;
   interactMode: InteractMode;
+  poseEditMode: PoseEditMode;
+  selectedBone: number;
+  selectedBoneName: string;
   expression: ExpressionId;
   pose: PoseId;
   energy: number;
@@ -245,6 +249,8 @@ type StudioState = StudioParams & {
   setParam: <K extends keyof StudioParams>(key: K, value: StudioParams[K]) => void;
   applyPreset: (id: PresetId) => void;
   setInteractMode: (mode: InteractMode) => void;
+  setPoseEditMode: (mode: PoseEditMode) => void;
+  setSelectedBone: (i: number, name?: string) => void;
   setExpression: (id: ExpressionId) => void;
   setPose: (id: PoseId) => void;
   setEnergy: (v: number) => void;
@@ -264,6 +270,9 @@ export const useStudio = create<StudioState>((set) => ({
   ...PRESETS.soft,
   preset: "soft",
   interactMode: "drag",
+  poseEditMode: "ik" as PoseEditMode,
+  selectedBone: -1,
+  selectedBoneName: "",
   expression: "rest",
   pose: "idle",
   energy: 0,
@@ -325,7 +334,14 @@ export const useStudio = create<StudioState>((set) => ({
       expression: s.expression,
       pose: s.pose,
     })),
-  setInteractMode: (interactMode) => set({ interactMode }),
+  setInteractMode: (interactMode) =>
+    set((s) => ({
+      interactMode,
+      selectedBone: interactMode === "pose" ? s.selectedBone : -1,
+      showLattice: interactMode === "pose" ? true : s.showLattice,
+    })),
+  setPoseEditMode: (poseEditMode) => set({ poseEditMode }),
+  setSelectedBone: (selectedBone, name) => set({ selectedBone, selectedBoneName: name ?? "" }),
   setExpression: (expression) => set({ expression }),
   setPose: (pose) => set({ pose }),
   setEnergy: (energy) => set({ energy }),
