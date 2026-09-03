@@ -210,7 +210,10 @@ don't scaffold from stale priors — and keep each contract:
    them, don't import `@/lib/db`, don't add migrations. **Never create
    `src/routes/auth/popup.tsx`**: the template Vite plugin already serves
    `/auth/popup` (`popup.server.ts`), and a React page there shows the app
-   inside the popup. Wiring: `.grok/references/data-and-auth.md`.
+   inside the popup. Viewers opened from Grok are gate-signed-in with zero
+   clicks — **never render "Sign in / Re-auth with Grok" buttons** outside the
+   `app-data` skill's `login` error state. Wiring:
+   `.grok/references/data-and-auth.md`.
 
 ---
 
@@ -280,35 +283,35 @@ changes. Revive, reboot-wipe and the `startup.sh` worked example:
    prints a JSON verdict. Confirm BOTH:
    - the app root has **visible content** (real text/elements on screen) —
      **visually inspect both screenshots in one batched read, every time**
-     (the JSON can't catch white-on-white text, overlap, or broken spacing),
-     and
+     (the JSON can't catch white-on-white text, overlap or broken spacing), and
    - the **browser console has no uncaught errors** (runtime error, failed
      module/asset load, hydration mismatch).
-   If blank or any console error, fix and re-check. Never stop at "HTTP 200".
+   If blank or any console error, fix and re-check.
+   **Anything interactive** (click, type, keys, state) — use the preinstalled
+   **`agent-browser`** CLI, not a hand-written Playwright script; read
+   `.grok/references/browser-qa.md` first.
    **Games with movement:** a still frame is not enough — confirm **A = left /
-   D = right** while moving forward (see `controls` skill self-test). Flip one
-   steer/roll sign if inverted; retest.
+   D = right** while moving forward (`controls` §5c). Flip one steer/roll sign
+   if inverted; retest.
 8. **Verify the PRODUCTION build, not just dev.** Dev (Vite) can render while
    the deployed Vercel build is blank. Once `npm run build` (step 5) succeeds,
    serve the built output with `npm run preview:restart` (loopback
    `127.0.0.1:8081`) and re-run the smoke script with the dev verdict as
-   `--baseline`. Watch specifically for
+   `--baseline`. Watch for
    `Failed to load module script … MIME type "text/html"`.
    **If you edited source after kicking off the build, re-run `npm run build`
-   first, then `npm run preview:restart`** — it frees `:8081` before serving, so
-   you never smoke the previous build's output. A clean, non-diverging JSON is
-   enough — re-read the built screenshots only if it flags a failure or
-   divergence. Mobile (~390×844) is already covered by the combined smoke pass.
+   first, then `npm run preview:restart`** — it frees `:8081` first, so you
+   never smoke the previous build's output. A clean, non-diverging JSON is
+   enough. Mobile (~390×844) is already covered by the combined smoke pass.
 9. Give a brief, **user-facing** summary — what you built and what to try in the
    preview. **Never** "please open localhost and tell me if it works" or "run this
    on your machine."
 
-### Browser QA (agent-driven only; the user is not your QA)
+### Browser QA (the user is not your QA)
 
 You drive the browser yourself, in the sandbox, against
 `http://127.0.0.1:8080`. **Always write QA screenshots under
-`/workspace/screenshots/`, never `/tmp`**. Menu and QA depth:
-`.grok/references/browser-qa.md`.
+`/workspace/screenshots/`, never `/tmp`**. Interactive checks: step 7.
 
 ### Communication rules (avoid confusing the user)
 

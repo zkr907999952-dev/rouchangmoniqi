@@ -4,6 +4,7 @@ import * as THREE from "three";
 import { SkeletonUtils } from "three-stdlib";
 import type { OrbitControls as OrbitControlsImpl } from "three-stdlib";
 import { SoftSkeleton, type SkinBinding } from "@/lib/softbody/soft-skeleton";
+import { meshMatKey, nudeBones, nudeMapFor } from "@/lib/softbody/nude-rig";
 import { GutPeristalsis } from "@/lib/softbody/peristalsis";
 import { BellyStrike } from "@/lib/softbody/belly-strike";
 import { GutHealth } from "@/lib/softbody/gut-health";
@@ -1209,7 +1210,7 @@ function FittedFigure({
     const landmarks = sampleLandmarks(body, navel, height);
     landmarks.lHand ??= new THREE.Vector3(-armSpan * 0.85, yNavel - 0.2, 0.03);
     landmarks.rHand ??= new THREE.Vector3(armSpan * 0.85, yNavel - 0.2, 0.03);
-    const skeleton = new SoftSkeleton(landmarks, height);
+    const skeleton = new SoftSkeleton(landmarks, height, nudeBones());
     const boundGeos: THREE.BufferGeometry[] = [];
     const torsoBinds: SkinBinding[] = [];
     const weightViews: { mesh: THREE.Mesh; orig: THREE.Material | THREE.Material[]; weight: THREE.Material }[] = [];
@@ -1234,7 +1235,12 @@ function FittedFigure({
       }
       pos.array.set(world);
       pos.needsUpdate = true;
-      const binding = skeleton.bind(pos.array, hint ?? bindHint(mesh));
+      const hintName = hint ?? bindHint(mesh);
+      const pack = nudeMapFor(meshMatKey(mesh), n);
+      const binding =
+        pack && pack.count === n
+          ? skeleton.bindPrepared(pos.array, pack.index, pack.weight, hintName)
+          : skeleton.bind(pos.array, hintName);
       geo.setAttribute("color", new THREE.BufferAttribute(binding.colors, 3));
       boundGeos.push(geo);
       if (!hint && isTorsoMesh(mesh)) torsoBinds.push(binding);
@@ -1290,7 +1296,7 @@ function FittedFigure({
     const jointBuf = new Float32Array(skeleton.count * 3);
     const boneVis = new THREE.Group();
     boneVis.visible = false;
-    const jointGeo = new THREE.SphereGeometry(0.014, 8, 8);
+    const jointGeo = new THREE.SphereGeometry(skeleton.count > 80 ? 0.007 : 0.014, 8, 8);
     const jointMat = new THREE.MeshBasicMaterial({ color: "#d4b5a0", depthTest: false, transparent: true, opacity: 0.95 });
     const joints: THREE.Mesh[] = [];
     for (let i = 0; i < skeleton.count; i++) {
@@ -1334,6 +1340,11 @@ function FittedFigure({
         })(),
         guts: { min: gutBoxNow.min.toArray(), max: gutBoxNow.max.toArray() },
         navel: navel.toArray(),
+        nativeSkin: {
+          bones: skeleton.count,
+          names: skeleton.names.slice(0, 10),
+          hip: skeleton.names.includes("C_Hip_a"),
+        },
         crotch: crotch.toArray(),
         anus: anus.toArray(),
         bayonet: { hasEntry: false, punctured: false, penetration: 0, squeeze: 0 },
