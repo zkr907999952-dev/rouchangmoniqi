@@ -66,6 +66,13 @@ function authPopupPlugin(): Plugin {
     name: "app-builder:auth-popup",
     apply: "serve",
     configureServer(server) {
+      server.middlewares.use((req, res, next) => {
+        const path = (req.url ?? "").split("?", 1)[0] ?? "";
+        if (path.startsWith("/models/")) {
+          res.setHeader("Cache-Control", "public, max-age=31536000, immutable");
+        }
+        next();
+      });
       // Register immediately (not in a returned post-hook) so we run BEFORE
       // TanStack Start / the SPA HTML fallback. A model-authored
       // `src/routes/auth/popup.tsx` React page must never win this path.
