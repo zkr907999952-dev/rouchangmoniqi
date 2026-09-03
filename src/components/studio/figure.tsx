@@ -1054,6 +1054,7 @@ function attachXray(
     return punch;
   });
   mesh.material = punchMats.length === 1 ? punchMats[0] : punchMats;
+  mesh.renderOrder = 2;
 
   const fadeMats = punchMats.map((punch) => {
     if (!punch) return punch;
@@ -1251,6 +1252,18 @@ function FittedFigure({
         side: THREE.DoubleSide,
       });
       weightViews.push({ mesh, orig: mesh.material, weight: weightMat });
+      if (hintName === "hair") {
+        mesh.renderOrder = 0;
+        const mats = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
+        for (const raw of mats) {
+          if (!raw) continue;
+          raw.depthWrite = true;
+          raw.depthTest = true;
+          raw.transparent = false;
+        }
+      } else if (!hint) {
+        mesh.renderOrder = 2;
+      }
     };
 
     body.traverse((obj) => {
@@ -1301,11 +1314,13 @@ function FittedFigure({
     const jointMat = new THREE.MeshBasicMaterial({ color: "#d4b5a0", depthTest: false, transparent: true, opacity: 0.95 });
     const jointSel = new THREE.MeshBasicMaterial({ color: "#7ec8e3", depthTest: false, transparent: true, opacity: 1 });
     const joints: THREE.Mesh[] = [];
-    const majorGeo = new THREE.SphereGeometry(0.02, 12, 12);
-    const fingerGeo = new THREE.SphereGeometry(0.012, 10, 10);
+    const majorGeo = new THREE.SphereGeometry(0.01, 10, 10);
+    const fingerGeo = new THREE.SphereGeometry(0.006, 8, 8);
+    const hairGeo = new THREE.SphereGeometry(0.007, 8, 8);
     for (let i = 0; i < skeleton.count; i++) {
-      const finger = /Thumb|Index|Middle|Ring|Pinky|hair/i.test(skeleton.names[i]!);
-      const m = new THREE.Mesh(finger ? fingerGeo : majorGeo, jointMat);
+      const nm = skeleton.names[i]!;
+      const geo = /Hair/i.test(nm) ? hairGeo : /Thumb|Index|Middle|Ring|Pinky/i.test(nm) ? fingerGeo : majorGeo;
+      const m = new THREE.Mesh(geo, jointMat);
       m.frustumCulled = false;
       m.renderOrder = 30;
       m.userData.boneIndex = i;
@@ -1368,7 +1383,7 @@ function FittedFigure({
       gizmo.add(grp);
       moveArrows.push(grp);
     }
-    boneVis.add(gizmo);
+    root.add(gizmo);
     root.add(boneVis);
     for (const v of weightViews) v.orig = v.mesh.material;
 
@@ -1688,6 +1703,9 @@ function FittedFigure({
       fistSpread: s.fistSpread,
       fistLever: s.fistLever,
       fistRise: s.fistRise,
+      breastSoft: s.breastSoft,
+      breastDamp: s.breastDamp,
+      hairDamp: s.hairDamp,
     });
     applyNavelMorph(setup.navelMorph, s.navelDepth, s.navelDiameter);
     gutExc.current += (0 - gutExc.current) * (1 - Math.exp(-0.42 * dt));
@@ -1779,8 +1797,8 @@ function FittedFigure({
     }
 
     const poseOn = s.interactMode === "pose";
-    setup.boneVis.visible = s.showLattice || poseOn;
-    if (setup.boneVis.visible) {
+    setup.boneVis.visible = s.showLattice;
+    if (s.showLattice) {
       const jp = setup.skeleton.jointPositions(setup.jointBuf);
       const sel = s.selectedBone;
       for (let i = 0; i < setup.joints.length; i++) {
@@ -1790,17 +1808,17 @@ function FittedFigure({
       const lp = setup.boneLines.geometry.getAttribute("position") as THREE.BufferAttribute;
       setup.skeleton.writeBoneLines(lp.array as Float32Array);
       lp.needsUpdate = true;
-      const gz = setup.gizmo;
-      if (poseOn && sel >= 0 && s.poseEditMode !== "ik") {
-        gz.visible = true;
-        gz.position.copy(setup.skeleton.bonePos(sel));
-        gz.quaternion.copy(setup.skeleton.boneRot(sel));
-        const rot = s.poseEditMode === "rotate";
-        for (const r of setup.rotRings) r.visible = rot;
-        for (const a of setup.moveArrows) a.visible = !rot;
-      } else {
-        gz.visible = false;
-      }
+    }
+    const gz = setup.gizmo;
+    if (poseOn && s.selectedBone >= 0 && s.poseEditMode !== "ik") {
+      gz.visible = true;
+      gz.position.copy(setup.skeleton.bonePos(s.selectedBone));
+      gz.quaternion.copy(setup.skeleton.boneRot(s.selectedBone));
+      const rot = s.poseEditMode === "rotate";
+      for (const r of setup.rotRings) r.visible = rot;
+      for (const a of setup.moveArrows) a.visible = !rot;
+    } else {
+      gz.visible = false;
     }
     for (const v of setup.weightViews) {
       v.mesh.material = s.showWeights ? v.weight : v.orig;
