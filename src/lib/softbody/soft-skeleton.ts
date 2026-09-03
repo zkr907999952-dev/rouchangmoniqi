@@ -343,12 +343,12 @@ export class SoftSkeleton {
       let soft = 0.12;
       if (hint === "dress") soft = 0.22 + belly * 0.7 + chest * 0.78;
       else if (hint === "organs") soft = 0.82;
-      else if (hint === "hair") soft = 0.45;
+      else if (hint === "hair") soft = 0;
       else if (hint === "legs") soft = y < 0.2 ? 0.2 : 0.35;
       else if (hint === "face" || hint === "mouth" || hint === "eye") soft = 0.2 + cheek * 0.4;
       softness[i] = Math.min(1, soft);
     }
-
+    if (hint === "hair") this.reskinHair(index, weight, rest, softness, n);
     const binding: SkinBinding = { positions, rest, count: n, index, weight, colors, softness, delta, dprev };
     this.bindings.push(binding);
     return binding;
@@ -379,15 +379,63 @@ export class SoftSkeleton {
       let soft = 0.12;
       if (hint === "dress") soft = 0.22 + belly * 0.7 + chest * 0.78;
       else if (hint === "organs") soft = 0.82;
-      else if (hint === "hair") soft = 0.18;
+      else if (hint === "hair") soft = 0;
       else if (hint === "legs") soft = y < 0.2 ? 0.2 : 0.35;
       else if (hint === "face" || hint === "mouth" || hint === "eye") soft = 0.2 + cheek * 0.4;
       else soft = 0.16 + belly * 0.55 + chest * 0.82;
       softness[i] = Math.min(1, soft);
     }
+    if (hint === "hair") this.reskinHair(index, weight, rest, softness, n);
     const binding: SkinBinding = { positions, rest, count: n, index, weight, colors, softness, delta, dprev };
     this.bindings.push(binding);
     return binding;
+  }
+
+  private reskinHair(index: Uint16Array, weight: Float32Array, rest: Float32Array, softness: Float32Array, n: number) {
+    const head = this.byName["C_Head_a"] ?? 0;
+    const hx = this.rest[head * 3]!;
+    const hy = this.rest[head * 3 + 1]!;
+    const hz = this.rest[head * 3 + 2]!;
+    const phys = this.hairIds.slice(3);
+    const lockY = this.neckY - 0.02;
+    const setBone = (i: number, a: number, wa: number, b: number, wb: number) => {
+      const o = i * 4;
+      index[o] = a;
+      weight[o] = wa;
+      index[o + 1] = b;
+      weight[o + 1] = wb;
+      index[o + 2] = a;
+      weight[o + 2] = 0;
+      index[o + 3] = a;
+      weight[o + 3] = 0;
+      softness[i] = 0;
+    };
+    for (let i = 0; i < n; i++) {
+      const x = rest[i * 3]!;
+      const y = rest[i * 3 + 1]!;
+      const z = rest[i * 3 + 2]!;
+      const dist = Math.hypot(x - hx, y - hy, z - hz);
+      const onSkull = y >= lockY || dist < 0.17 || (y > hy - 0.16 && z > -0.015);
+      if (onSkull || phys.length < 1) {
+        setBone(i, head, 1, head, 0);
+        continue;
+      }
+      let k = 0;
+      while (k < phys.length - 1 && y < this.rest[phys[k]! * 3 + 1]!) k++;
+      if (k === 0) {
+        const y3 = this.rest[phys[0]! * 3 + 1]!;
+        const t = THREE.MathUtils.clamp((lockY - y) / Math.max(0.04, lockY - y3), 0, 1);
+        if (t < 0.2) setBone(i, head, 1, head, 0);
+        else setBone(i, head, 1 - t, phys[0]!, t);
+        continue;
+      }
+      const a = phys[k - 1]!;
+      const b = phys[k]!;
+      const ya = this.rest[a * 3 + 1]!;
+      const yb = this.rest[b * 3 + 1]!;
+      const t = THREE.MathUtils.clamp((ya - y) / Math.max(0.02, ya - yb), 0, 1);
+      setBone(i, a, 1 - t, b, t);
+    }
   }
 
   private findIndex(re: RegExp) {
@@ -855,7 +903,7 @@ export class SoftSkeleton {
     const root = this.hairIds[0]!;
     const rp = this.wpos[root]!;
     const neckCut = this.neckY;
-    const pinned = (k: number) => this.rest[this.hairIds[k]! * 3 + 1]! >= neckCut;
+    const pinned = (k: number) => k <= 2 || this.rest[this.hairIds[k]! * 3 + 1]! >= neckCut;
     this.hairP[0]!.copy(rp);
     this.hairPrev[0]!.copy(rp);
     const dt2 = d * d;
