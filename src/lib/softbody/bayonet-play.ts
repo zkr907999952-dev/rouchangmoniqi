@@ -558,7 +558,7 @@ uniform float uXray; uniform float uY0; uniform float uY1; uniform float uXMax; 
 uniform vec4 uTile;
 varying vec3 vBodyW;
 float xrayHole() {
-  float band = smoothstep(uY0, uY0 + 0.08, vBodyW.y) * (1.0 - smoothstep(uY1 - 0.08, uY1, vBodyW.y));
+  float band = smoothstep(uY0, uY0 + 0.08, vBodyW.y) * (1.0 - smoothstep(uY1 - 0.04, uY1, vBodyW.y));
   float torso = 1.0 - smoothstep(uXMax * 0.65, uXMax + 0.1, abs(vBodyW.x));
   float front = smoothstep(uZFront - 0.16, uZFront + 0.04, vBodyW.z);
   return clamp(band * torso * front * uXray, 0.0, 1.0);

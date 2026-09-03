@@ -1013,7 +1013,7 @@ function injectXray(shader: THREE.WebGLProgramParametersWithUniforms, y0: number
 uniform float uXray; uniform float uY0; uniform float uY1; uniform float uXMax; uniform float uZFront;
 varying vec3 vBodyW;
 float xrayHole() {
-  float band = smoothstep(uY0, uY0 + 0.08, vBodyW.y) * (1.0 - smoothstep(uY1 - 0.08, uY1, vBodyW.y));
+  float band = smoothstep(uY0, uY0 + 0.08, vBodyW.y) * (1.0 - smoothstep(uY1 - 0.04, uY1, vBodyW.y));
   float torso = 1.0 - smoothstep(uXMax * 0.65, uXMax + 0.1, abs(vBodyW.x));
   float front = smoothstep(uZFront - 0.16, uZFront + 0.04, vBodyW.z);
   return clamp(band * torso * front * uXray, 0.0, 1.0);
@@ -1168,7 +1168,7 @@ function FittedFigure({
     const yAb0 = yNavel - 0.08;
     const yAb1 = yNavel + 0.11;
     const yX0 = yNavel - 0.2;
-    const yX1 = yNavel + 0.28;
+    const yX1 = yNavel + 0.145;
 
     const abSample = sampleBand(body, yAb0, yAb1, 0.12);
     const abdomen =
