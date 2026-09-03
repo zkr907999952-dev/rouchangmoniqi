@@ -1764,7 +1764,7 @@ function FittedFigure({
     if (!grab.current?.active && ((setup.skeleton.hasDents || Math.abs(s.bellyInflate) > 0.04 || s.navelDepth > 0.03 || s.navelDiameter > 0.03) ? energyTick.current % 2 === 0 : energyTick.current % 20 === 0)) {
       for (const geo of setup.boundGeos) {
         const n = geo.getAttribute("position").count;
-        if (n < 80000) geo.computeVertexNormals();
+        if (n < 40000) geo.computeVertexNormals();
       }
     }
 
