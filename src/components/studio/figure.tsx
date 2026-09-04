@@ -1763,10 +1763,15 @@ function FittedFigure({
     energyTick.current += 1;
     writeBindings();
     if (energyTick.current % 8 === 0) s.setEnergy(setup.skeleton.energy);
-    if (!grab.current?.active && ((setup.skeleton.hasDents || Math.abs(s.bellyInflate) > 0.04 || s.navelDepth > 0.03 || s.navelDiameter > 0.03) ? energyTick.current % 2 === 0 : energyTick.current % 20 === 0)) {
+    const deforming =
+      Boolean(grab.current?.active) ||
+      setup.skeleton.hasDents ||
+      Math.abs(s.bellyInflate) > 0.04 ||
+      s.navelDepth > 0.03 ||
+      s.navelDiameter > 0.03;
+    if (deforming || energyTick.current % 2 === 0) {
       for (const geo of setup.boundGeos) {
-        const n = geo.getAttribute("position").count;
-        if (n < 40000) geo.computeVertexNormals();
+        geo.computeVertexNormals();
       }
     }
 
@@ -1789,12 +1794,11 @@ function FittedFigure({
     setup.gutRoot.visible = s.showOrgans;
     setup.pelvisRoot.visible = s.showOrgans;
     setup.bellyLight.intensity = s.showOrgans && xray > 0.08 ? 0.05 + xray * 0.06 : 0;
-    if (s.showOrgans && energyTick.current % 6 === 0) {
+    if (s.showOrgans && energyTick.current % 3 === 0) {
       setup.gutRoot.traverse((obj) => {
         const mesh = obj as THREE.Mesh;
         if (!mesh.isMesh || !mesh.geometry) return;
-        const n = mesh.geometry.getAttribute("position")?.count ?? 0;
-        if (n > 0 && n < 120000) mesh.geometry.computeVertexNormals();
+        mesh.geometry.computeVertexNormals();
       });
     }
 

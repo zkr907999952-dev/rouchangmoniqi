@@ -1206,17 +1206,28 @@ export class SoftSkeleton {
       this.chestVel.set(vx, vy, vz);
       const mass = 0.0048 * (0.5 + soft) * (0.25 + bi * 1.5);
       const tX = (-ax * mass * 0.55 * j - this.yawF * 0.022 * j - this.yawVel * 0.004 * j) * bi;
-      const tY = -ay * mass * 0.7 * j * bi - 0.014 * soft + Math.sin(this.breathT) * 0.004 * (0.4 + soft);
-      const tZ = (-az * mass * 0.5 * j + Math.abs(this.yawF) * 0.009 * j + Math.max(0, -ay) * mass * 0.35) * bi;
+      const drop = (Math.abs(tX) * 0.28 + Math.abs(this.yawF) * 0.004 * j) * bi;
+      const tY =
+        (-ay * mass * 0.72 * j - this.pitchF * 0.012 * j - this.pitchVel * 0.003 * j) * bi -
+        drop -
+        0.006 * (0.3 + soft) +
+        Math.sin(this.breathT) * 0.004 * (0.4 + soft);
+      const tZ = (-az * mass * 0.5 * j + Math.abs(this.yawF) * 0.006 * j + Math.max(0, -ay) * mass * 0.28) * bi;
       const w1 = 11.2 - soft * 3.4;
       const z1 = 0.2 + bd * 0.32;
       const k1 = w1 * w1;
       const c1 = 2 * z1 * w1;
+      const wY = 9.4 - soft * 2.2;
+      const zY = 0.18 + bd * 0.28;
+      const kY = wY * wY;
+      const cY = 2 * zY * wY;
       const w2 = 20 - soft * 7;
       const z2 = 0.26 + bd * 0.28;
       const k2 = w2 * w2;
       const c2 = 2 * z2 * w2;
-      const lim = 0.032 + soft * 0.09;
+      const limX = 0.032 + soft * 0.09;
+      const limY = 0.026 + soft * 0.07;
+      const limZ = 0.028 + soft * 0.08;
       const step = (
         m: {
           x: number; y: number; z: number; vx: number; vy: number; vz: number;
@@ -1225,20 +1236,23 @@ export class SoftSkeleton {
         lag: number,
       ) => {
         m.vx += (-k1 * (m.x - tX * lag) - c1 * m.vx) * d;
-        m.vy += (-k1 * (m.y - tY * lag) - c1 * m.vy) * d;
+        m.vy += (-kY * (m.y - tY * lag) - cY * m.vy) * d;
         m.vz += (-k1 * (m.z - tZ * lag) - c1 * m.vz) * d;
         m.x += m.vx * d;
         m.y += m.vy * d;
         m.z += m.vz * d;
         m.svx += (-k2 * (m.sx - m.x) - c2 * (m.svx - m.vx)) * d;
-        m.svy += (-k2 * (m.sy - m.y) - c2 * (m.svy - m.vy)) * d;
+        m.svy += (-kY * 1.15 * (m.sy - m.y) - cY * 0.9 * (m.svy - m.vy)) * d;
         m.svz += (-k2 * (m.sz - m.z) - c2 * (m.svz - m.vz)) * d;
         m.sx += m.svx * d;
         m.sy += m.svy * d;
         m.sz += m.svz * d;
-        const len = Math.hypot(m.sx, m.sy, m.sz);
-        if (len > lim) {
-          const s = lim / len;
+        const nx = m.sx / limX;
+        const ny = m.sy / limY;
+        const nz = m.sz / limZ;
+        const nlen = Math.hypot(nx, ny, nz);
+        if (nlen > 1) {
+          const s = 1 / nlen;
           m.sx *= s;
           m.sy *= s;
           m.sz *= s;
@@ -1252,10 +1266,10 @@ export class SoftSkeleton {
     const ri = this.findIndex(/R_Breast_b_Phy/);
     const la = this.findIndex(/L_Breast_a_Phy/);
     const ra = this.findIndex(/R_Breast_a_Phy/);
-    if (li >= 0) this.q[li]!.setFromEuler(_e.set(this.brL.sy * spin, this.brL.sx * spin * 0.75, this.brL.sz * spin * 0.35));
-    if (ri >= 0) this.q[ri]!.setFromEuler(_e.set(this.brR.sy * spin, this.brR.sx * spin * 0.75, this.brR.sz * spin * 0.35));
-    if (la >= 0) this.q[la]!.setFromEuler(_e.set(this.brL.sy * spin * 0.38, this.brL.sx * spin * 0.28, 0));
-    if (ra >= 0) this.q[ra]!.setFromEuler(_e.set(this.brR.sy * spin * 0.38, this.brR.sx * spin * 0.28, 0));
+    if (li >= 0) this.q[li]!.setFromEuler(_e.set(this.brL.sy * spin * 0.9, this.brL.sx * spin * 0.75, this.brL.sz * spin * 0.35));
+    if (ri >= 0) this.q[ri]!.setFromEuler(_e.set(this.brR.sy * spin * 0.9, this.brR.sx * spin * 0.75, this.brR.sz * spin * 0.35));
+    if (la >= 0) this.q[la]!.setFromEuler(_e.set(this.brL.sy * spin * 0.34, this.brL.sx * spin * 0.28, 0));
+    if (ra >= 0) this.q[ra]!.setFromEuler(_e.set(this.brR.sy * spin * 0.34, this.brR.sx * spin * 0.28, 0));
   }
 
   private updateFK() {
@@ -1321,8 +1335,8 @@ export class SoftSkeleton {
         const squash = -bounce * 1.15;
         const spread = Math.max(0, -bounce) * 0.7 * Math.sign(rx || 1);
         positions[i3] += (br.sx * 1.35 + spread) * w;
-        positions[i3 + 1] += br.sy * 1.4 * w;
-        positions[i3 + 2] += (br.sz * 1.25 + squash) * w;
+        positions[i3 + 1] += (bounce * 1.35 - Math.abs(br.sx) * 0.18) * w;
+        positions[i3 + 2] += (br.sz * 1.15 + squash * 0.7) * w;
       }
     }
   }
