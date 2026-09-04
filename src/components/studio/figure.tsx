@@ -1240,10 +1240,11 @@ function FittedFigure({
       pos.needsUpdate = true;
       const hintName = hint ?? bindHint(mesh);
       const pack = nudeMapFor(meshMatKey(mesh), n);
+      const tri = geo.getIndex()?.array as Uint16Array | Uint32Array | undefined;
       const binding =
         pack && pack.count === n
-          ? skeleton.bindPrepared(pos.array, pack.index, pack.weight, hintName)
-          : skeleton.bind(pos.array, hintName);
+          ? skeleton.bindPrepared(pos.array, pack.index, pack.weight, hintName, tri)
+          : skeleton.bind(pos.array, hintName, tri);
       geo.setAttribute("color", new THREE.BufferAttribute(binding.colors, 3));
       boundGeos.push(geo);
       if (!hint && isTorsoMesh(mesh)) torsoBinds.push(binding);
@@ -1715,6 +1716,8 @@ function FittedFigure({
       hairDamp: s.hairDamp,
       breastInertia: s.breastInertia,
       hairInertia: s.hairInertia,
+      blinkEnabled: s.blinkEnabled,
+      eyeOpen: s.eyeOpen,
     });
     applyNavelMorph(setup.navelMorph, s.navelDepth, s.navelDiameter);
     gutExc.current += (0 - gutExc.current) * (1 - Math.exp(-0.42 * dt));
@@ -1838,6 +1841,26 @@ function FittedFigure({
     }
     const vela = (window as unknown as { __vela?: Record<string, unknown> }).__vela;
     if (vela) {
+      vela.frameFace = () => {
+        const head = setup.skeleton.names.indexOf("C_Head_a");
+        const p = head >= 0 ? setup.skeleton.bonePos(head).clone() : new THREE.Vector3(0, 1.5, 0.04);
+        const target = new THREE.Vector3(p.x, p.y - 0.015, p.z + 0.05);
+        const pos = new THREE.Vector3(p.x, p.y + 0.02, p.z + 0.18);
+        camera.position.copy(pos);
+        camera.lookAt(target);
+        const c = controlsRef.current;
+        if (c) {
+          c.enabled = false;
+          c.target.copy(target);
+        }
+        return { pos: camera.position.toArray(), target: target.toArray(), head: p.toArray() };
+      };
+      vela.lidDebug = () => setup.skeleton.lidDebug();
+      vela.setBlink = (v: number) => {
+        setup.skeleton.setBlink(v);
+        return v;
+      };
+      vela.blinkNow = () => setup.skeleton.blinkNow();
       vela.frameBelly = () => {
         camera.position.set(0.12, 1.05, 0.68);
         camera.lookAt(setup.navel.x, setup.navel.y, setup.navel.z);

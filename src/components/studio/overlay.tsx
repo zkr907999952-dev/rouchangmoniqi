@@ -108,6 +108,10 @@ export function Overlay() {
   const setPoseEditMode = useStudio((s) => s.setPoseEditMode);
   const gazeFollow = useStudio((s) => s.gazeFollow);
   const setGazeFollow = useStudio((s) => s.setGazeFollow);
+  const blinkEnabled = useStudio((s) => s.blinkEnabled);
+  const setBlinkEnabled = useStudio((s) => s.setBlinkEnabled);
+  const eyeOpen = useStudio((s) => s.eyeOpen);
+  const setEyeOpen = useStudio((s) => s.setEyeOpen);
   const grabbing = useStudio((s) => s.grabbing);
   const loading = useStudio((s) => s.loading);
   const loadProgress = useStudio((s) => s.loadProgress);
@@ -841,6 +845,41 @@ export function Overlay() {
               </button>
               <p className="mt-1.5 text-xs leading-relaxed text-muted">
                 开启后眼睛和脖子在人类活动范围内看向镜头。转到背后超出范围时会停止注视。
+              </p>
+              <button
+                type="button"
+                onClick={() => setBlinkEnabled(!blinkEnabled)}
+                className={cn(
+                  "mt-3 inline-flex h-10 w-full items-center justify-center gap-1.5 rounded-md text-[12px] font-medium",
+                  blinkEnabled ? "bg-accent text-accent-fg" : "border border-border bg-surface-2 text-muted hover:text-fg",
+                )}
+              >
+                <Eye className="size-3.5" />
+                眨眼
+              </button>
+              <label className="mt-3 block">
+                <span className="mb-1.5 flex items-center justify-between text-xs text-muted">
+                  <span>眼睛睁开</span>
+                  <span className="tabular-nums text-fg">{eyeOpen.toFixed(2)}</span>
+                </span>
+                <Slider.Root
+                  value={[eyeOpen]}
+                  min={0}
+                  max={1}
+                  step={0.01}
+                  onValueChange={([v]) => {
+                    if (typeof v === "number") setEyeOpen(v);
+                  }}
+                  className="relative flex h-5 w-full touch-none items-center"
+                >
+                  <Slider.Track className="relative h-1 grow rounded-full bg-surface-2">
+                    <Slider.Range className="absolute h-full rounded-full bg-accent" />
+                  </Slider.Track>
+                  <Slider.Thumb className="block size-3.5 rounded-full bg-fg shadow-sm outline-none ring-2 ring-transparent focus-visible:ring-accent" />
+                </Slider.Root>
+              </label>
+              <p className="mt-1.5 text-xs leading-relaxed text-muted">
+                上下眼皮一起挤成一条缝。滑块 1 全睁，0 全闭。
               </p>
               <p className="mt-4 mb-1.5 text-xs text-muted">表情</p>
               <div className="grid grid-cols-4 gap-1">

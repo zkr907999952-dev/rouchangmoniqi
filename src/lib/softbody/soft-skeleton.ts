@@ -30,6 +30,8 @@ export type SkelParams = {
   hairDamp: number;
   breastInertia: number;
   hairInertia: number;
+  blinkEnabled: boolean;
+  eyeOpen: number;
 };
 
 export type ExpressionId = "rest" | "smile" | "surprise" | "open";
@@ -61,6 +63,7 @@ export type SkinBinding = {
   softness: Float32Array;
   delta: Float32Array;
   dprev: Float32Array;
+  hair?: boolean;
 };
 
 type Hold =
@@ -166,6 +169,17 @@ export class SoftSkeleton {
   private iSpine = -1;
   private iEyeL = -1;
   private iEyeR = -1;
+  private iFace = -1;
+  private readonly lidW: Float32Array;
+  private readonly lidKind: Int8Array;
+  private closeAmt = 0;
+  private blinkT = -1;
+  private blinkDur = 0.28;
+  private nextBlink = 0.8;
+  private blinkAmt = 0;
+  private debugBlink = -1;
+  private blinkOn = true;
+  private eyeOpen = 1;
   private readonly brL = { x: 0, y: 0, z: 0, vx: 0, vy: 0, vz: 0, sx: 0, sy: 0, sz: 0, svx: 0, svy: 0, svz: 0 };
   private readonly brR = { x: 0, y: 0, z: 0, vx: 0, vy: 0, vz: 0, sx: 0, sy: 0, sz: 0, svx: 0, svy: 0, svz: 0 };
   private readonly bindings: SkinBinding[] = [];
@@ -241,6 +255,18 @@ export class SoftSkeleton {
     this.iSpine = this.byName["C_Spine_d"] ?? -1;
     this.iEyeL = this.byName["L_Eye"] ?? -1;
     this.iEyeR = this.byName["R_Eye"] ?? -1;
+    this.iFace = this.byName["C_FaceBase_a"] ?? this.iHead;
+    this.lidW = new Float32Array(this.count);
+    this.lidKind = new Int8Array(this.count);
+    for (let i = 0; i < this.count; i++) {
+      const nm = this.names[i]!;
+      const m = /^(L|R)_(U|D)lid_([A-E])$/.exec(nm);
+      if (!m) continue;
+      const letter = m[3]!;
+      const w = letter === "C" ? 1 : letter === "B" ? 0.92 : letter === "D" ? 0.8 : letter === "A" ? 0.66 : 0.52;
+      this.lidW[i] = w;
+      this.lidKind[i] = m[2] === "U" ? 1 : -1;
+    }
     for (let i = 0; i < this.count; i++) {
       if (this.group[i] !== "hair") continue;
       let d = 0;
@@ -270,7 +296,7 @@ export class SoftSkeleton {
     this.updateFK();
   }
 
-  bind(positions: Float32Array, hint = "body"): SkinBinding {
+  bind(positions: Float32Array, hint = "body", tris?: ArrayLike<number>): SkinBinding {
     const n = positions.length / 3;
     const index = new Uint16Array(n * 4);
     const weight = new Float32Array(n * 4);
@@ -371,13 +397,13 @@ export class SoftSkeleton {
       else if (hint === "face" || hint === "mouth" || hint === "eye") soft = 0.2 + cheek * 0.4;
       softness[i] = Math.min(1, soft);
     }
-    if (hint === "hair") this.reskinHair(index, weight, rest, softness, n);
-    const binding: SkinBinding = { positions, rest, count: n, index, weight, colors, softness, delta, dprev };
+    if (hint === "hair") this.reskinHair(index, weight, rest, softness, n, tris);
+    const binding: SkinBinding = { positions, rest, count: n, index, weight, colors, softness, delta, dprev, hair: hint === "hair" };
     this.bindings.push(binding);
     return binding;
   }
 
-  bindPrepared(positions: Float32Array, index: Uint16Array, weight: Float32Array, hint = "body"): SkinBinding {
+  bindPrepared(positions: Float32Array, index: Uint16Array, weight: Float32Array, hint = "body", tris?: ArrayLike<number>): SkinBinding {
     const n = positions.length / 3;
     const rest = new Float32Array(positions);
     const colors = new Float32Array(n * 3);
@@ -411,13 +437,13 @@ export class SoftSkeleton {
       else soft = 0.16 + belly * 0.55 + chest * 0.82;
       softness[i] = Math.min(1, soft);
     }
-    if (hint === "hair") this.reskinHair(index, weight, rest, softness, n);
-    const binding: SkinBinding = { positions, rest, count: n, index, weight, colors, softness, delta, dprev };
+    if (hint === "hair") this.reskinHair(index, weight, rest, softness, n, tris);
+    const binding: SkinBinding = { positions, rest, count: n, index, weight, colors, softness, delta, dprev, hair: hint === "hair" };
     this.bindings.push(binding);
     return binding;
   }
 
-  private reskinHair(index: Uint16Array, weight: Float32Array, rest: Float32Array, softness: Float32Array, n: number) {
+  private reskinHair(index: Uint16Array, weight: Float32Array, rest: Float32Array, softness: Float32Array, n: number, tris?: ArrayLike<number>) {
     const head = this.byName["C_Head_a"] ?? 0;
     const hx = this.rest[head * 3]!;
     const hy = this.rest[head * 3 + 1]!;
@@ -436,7 +462,150 @@ export class SoftSkeleton {
       weight[o + 3] = 0;
       softness[i] = 0;
     };
+    const isLash = new Uint8Array(n);
+    const lidBones: number[] = [];
+    const browBones: number[] = [];
+    for (let b = 0; b < this.count; b++) {
+      if (this.lidKind[b]) lidBones.push(b);
+      else if (/Brow/.test(this.names[b]!)) browBones.push(b);
+    }
+    const parent = new Int32Array(n);
+    for (let i = 0; i < n; i++) parent[i] = i;
+    const find = (a: number) => {
+      let x = a;
+      while (parent[x] !== x) {
+        parent[x] = parent[parent[x]!]!;
+        x = parent[x]!;
+      }
+      return x;
+    };
+    const uni = (a: number, b: number) => {
+      a = find(a);
+      b = find(b);
+      if (a !== b) parent[b] = a;
+    };
+    const thresh = 0.0022 * 0.0022;
+    if (tris && tris.length >= 3) {
+      for (let t = 0; t + 2 < tris.length; t += 3) {
+        const a = tris[t]!;
+        const b = tris[t + 1]!;
+        const c = tris[t + 2]!;
+        if (a < n && b < n) uni(a, b);
+        if (b < n && c < n) uni(b, c);
+        if (a < n && c < n) uni(a, c);
+      }
+    } else {
+    const cell = 0.003;
+    const grid = new Map<string, number[]>();
     for (let i = 0; i < n; i++) {
+      const kx = Math.floor(rest[i * 3]! / cell);
+      const ky = Math.floor(rest[i * 3 + 1]! / cell);
+      const kz = Math.floor(rest[i * 3 + 2]! / cell);
+      const k = `${kx},${ky},${kz}`;
+      let list = grid.get(k);
+      if (!list) {
+        list = [];
+        grid.set(k, list);
+      }
+      list.push(i);
+    }
+    for (const [k, list] of grid) {
+      const [sx, sy, sz] = k.split(",").map(Number) as [number, number, number];
+      for (let ox = -1; ox <= 1; ox++) {
+        for (let oy = -1; oy <= 1; oy++) {
+          for (let oz = -1; oz <= 1; oz++) {
+            const other = ox === 0 && oy === 0 && oz === 0 ? list : grid.get(`${sx + ox},${sy + oy},${sz + oz}`);
+            if (!other) continue;
+            for (const i of list) {
+              const ix = rest[i * 3]!;
+              const iy = rest[i * 3 + 1]!;
+              const iz = rest[i * 3 + 2]!;
+              for (const j of other) {
+                if (j <= i) continue;
+                const dx = ix - rest[j * 3]!;
+                const dy = iy - rest[j * 3 + 1]!;
+                const dz = iz - rest[j * 3 + 2]!;
+                if (dx * dx + dy * dy + dz * dz < thresh) uni(i, j);
+              }
+            }
+          }
+        }
+      }
+    }
+    }
+    const clusters = new Map<number, number[]>();
+    for (let i = 0; i < n; i++) {
+      const r = find(i);
+      let ids = clusters.get(r);
+      if (!ids) {
+        ids = [];
+        clusters.set(r, ids);
+      }
+      ids.push(i);
+    }
+    const nearest = (x: number, y: number, z: number, bones: number[]) => {
+      let best = -1;
+      let bestD = 1e9;
+      for (const b of bones) {
+        const d = Math.hypot(x - this.rest[b * 3]!, y - this.rest[b * 3 + 1]!, z - this.rest[b * 3 + 2]!);
+        if (d < bestD) {
+          bestD = d;
+          best = b;
+        }
+      }
+      return { b: best, d: bestD };
+    };
+    for (const ids of clusters.values()) {
+      if (ids.length < 3 || ids.length > 160) continue;
+      let cx = 0;
+      let cy = 0;
+      let cz = 0;
+      let minx = 1e9;
+      let miny = 1e9;
+      let minz = 1e9;
+      let maxx = -1e9;
+      let maxy = -1e9;
+      let maxz = -1e9;
+      let touch = 1e9;
+      let touchB = -1;
+      for (const i of ids) {
+        const x = rest[i * 3]!;
+        const y = rest[i * 3 + 1]!;
+        const z = rest[i * 3 + 2]!;
+        cx += x;
+        cy += y;
+        cz += z;
+        minx = Math.min(minx, x);
+        miny = Math.min(miny, y);
+        minz = Math.min(minz, z);
+        maxx = Math.max(maxx, x);
+        maxy = Math.max(maxy, y);
+        maxz = Math.max(maxz, z);
+        const hit = nearest(x, y, z, lidBones);
+        if (hit.d < touch) {
+          touch = hit.d;
+          touchB = hit.b;
+        }
+      }
+      const inv = 1 / ids.length;
+      cx *= inv;
+      cy *= inv;
+      cz *= inv;
+      const span = Math.hypot(maxx - minx, maxy - miny, maxz - minz);
+      if (span > 0.036 || touchB < 0 || touch > 0.012) continue;
+      const brow = nearest(cx, cy, cz, browBones);
+      if (touch + 0.004 >= brow.d) continue;
+      const upper = this.lidKind[touchB]! > 0;
+      const side = cx >= 0 ? "L" : "R";
+      const key = `${side}_${upper ? "Ulid_C" : "Dlid_B"}`;
+      const bone = this.byName[key] ?? touchB;
+      for (const i of ids) {
+        setBone(i, bone, 1, bone, 0);
+        isLash[i] = 1;
+      }
+    }
+    for (let i = 0; i < n; i++) {
+      if (isLash[i]) continue;
       const x = rest[i * 3]!;
       const y = rest[i * 3 + 1]!;
       const z = rest[i * 3 + 2]!;
@@ -620,6 +789,56 @@ export class SoftSkeleton {
     if (point) this.gazeTarget.copy(point);
   }
 
+  setBlink(amount: number) {
+    this.debugBlink = amount;
+    if (amount < 0) return;
+    this.blinkAmt = THREE.MathUtils.clamp(amount, 0, 1);
+  }
+
+  blinkNow() {
+    this.debugBlink = -1;
+    this.blinkT = 0;
+    this.blinkDur = 0.28;
+    this.nextBlink = 0;
+  }
+
+  lidDebug() {
+    const i = this.byName["L_Ulid_C"] ?? -1;
+    return {
+      blinkAmt: this.blinkAmt,
+      eyeOpen: this.eyeOpen,
+      closed: this.closeAmt,
+      off: i >= 0 ? this.off[i]!.toArray() : null,
+    };
+  }
+
+  private closeLidPos(x: number, y: number, z: number, upper: boolean, t: number, out: THREE.Vector3) {
+    const ei = x >= 0 ? this.iEyeL : this.iEyeR;
+    if (ei < 0 || t <= 0) {
+      out.set(x, y, z);
+      return;
+    }
+    const ex = this.rest[ei * 3]!;
+    const ey = this.rest[ei * 3 + 1]!;
+    const ez = this.rest[ei * 3 + 2]!;
+    const dx = x - ex;
+    const dy = y - ey;
+    const dz = z - ez;
+    const r = Math.hypot(dy, dz);
+    if (r < 0.002) {
+      out.set(x, y, z);
+      return;
+    }
+    const phi = Math.atan2(dy, dz);
+    const nx = dx / 0.018;
+    const tCorner = THREE.MathUtils.clamp(Math.abs(nx), 0, 1);
+    const tUse = (upper ? Math.min(1, t) : t * 0.2) * (1 - 0.55 * tCorner * tCorner);
+    const slit = upper ? -0.62 : -0.4;
+    const phi2 = phi + (slit - phi) * tUse;
+    const wrap = r + 0.0016 * tUse;
+    out.set(ex + dx, ey + wrap * Math.sin(phi2), ez + wrap * Math.cos(phi2) + 0.0012 * tUse);
+  }
+
   private updateGaze(d: number) {
     const neck = this.iNeck;
     const head = this.iHead;
@@ -664,6 +883,43 @@ export class SoftSkeleton {
     this.gazeHeadQ.setFromEuler(_e.set(headPitch, headYaw, 0, "YXZ"));
     this.gazeEyeLQ.setFromEuler(_e.set(eyePitch, eyeYaw, 0, "YXZ"));
     this.gazeEyeRQ.setFromEuler(_e.set(eyePitch, eyeYaw, 0, "YXZ"));
+  }
+
+  private updateBlink(d: number) {
+    if (this.debugBlink >= 0) {
+      this.blinkAmt = THREE.MathUtils.clamp(this.debugBlink, 0, 1);
+      return;
+    }
+    if (!this.blinkOn) {
+      this.blinkAmt = Math.max(0, this.blinkAmt - d * 14);
+      this.blinkT = -1;
+      return;
+    }
+    if (this.blinkT < 0) {
+      this.nextBlink -= d;
+      if (this.blinkAmt > 0) this.blinkAmt = Math.max(0, this.blinkAmt - d * 18);
+      if (this.nextBlink > 0) return;
+      this.blinkT = 0;
+      this.blinkDur = 0.2 + Math.random() * 0.2;
+      return;
+    }
+    this.blinkT += d;
+    const u = this.blinkT / Math.max(0.16, this.blinkDur);
+    if (u >= 1) {
+      this.blinkT = -1;
+      this.blinkAmt = 0;
+      this.nextBlink = Math.random() < 0.13 ? 0.12 + Math.random() * 0.12 : 3 + Math.random() * 3;
+      return;
+    }
+    if (u < 0.22) {
+      const x = u / 0.22;
+      this.blinkAmt = x * x * (3 - 2 * x);
+    } else if (u < 0.34) {
+      this.blinkAmt = 1;
+    } else {
+      const x = (u - 0.34) / 0.66;
+      this.blinkAmt = 1 - x * x * (3 - 2 * x);
+    }
   }
 
   commitPose() {
@@ -847,7 +1103,11 @@ export class SoftSkeleton {
     this.yawF += (this.yawVel - this.yawF) * follow;
     this.pitchF += (this.pitchVel - this.pitchF) * follow;
     this.applyHoldPose();
+    this.blinkOn = params.blinkEnabled;
+    this.eyeOpen = THREE.MathUtils.clamp(params.eyeOpen, 0, 1);
     this.updateGaze(d);
+    this.updateBlink(d);
+    this.closeAmt = THREE.MathUtils.clamp(1 - this.eyeOpen * (1 - this.blinkAmt), 0, 1);
     const h = this.hold;
     const held = h && h.kind !== "tissue" ? h.bone : -1;
     const heldParent = held >= 0 ? this.parent[held] : -1;
@@ -864,6 +1124,24 @@ export class SoftSkeleton {
       const qv = this.qv[i]!;
       const isFace = g === "face";
       if (g === "hair" || /Breast_[ab]_Phy/.test(this.names[i]!)) continue;
+      if (this.lidKind[i]) {
+        const t = this.closeAmt * this.lidW[i]!;
+        this.closeLidPos(this.rest[i * 3]!, this.rest[i * 3 + 1]!, this.rest[i * 3 + 2]!, this.lidKind[i]! > 0, t, _from);
+        const ex = this.rest[i * 3]!;
+        const ey = this.rest[i * 3 + 1]!;
+        const ez = this.rest[i * 3 + 2]!;
+        this.off[i]!.set(_from.x - ex, _from.y - ey, _from.z - ez);
+        const ei = ex >= 0 ? this.iEyeL : this.iEyeR;
+        if (ei >= 0) {
+          const iy = this.rest[ei * 3 + 1]!;
+          const iz = this.rest[ei * 3 + 2]!;
+          const phi0 = Math.atan2(ey - iy, ez - iz);
+          const phi1 = Math.atan2(_from.y - iy, _from.z - iz);
+          q.setFromEuler(_e.set(phi1 - phi0, 0, 0, "YXZ"));
+        }
+        qv.set(0, 0, 0);
+        continue;
+      }
       let targetQ = isFace && this.expression !== "rest" ? this.exprQ[i]! : this.poseQ[i]!;
       if (!locked && (this.gazeEyeBlend > 0.01 || this.gazeNeckBlend > 0.01 || gb > 0.01)) {
         if (i === this.iNeck) {
@@ -1428,6 +1706,37 @@ export class SoftSkeleton {
       positions[i3] = ox + delta[i3]!;
       positions[i3 + 1] = oy + delta[i3 + 1]!;
       positions[i3 + 2] = oz + delta[i3 + 2]!;
+      if (this.closeAmt > 0.002) {
+        let inf = 0;
+        let signed = 0;
+        let brow = 0;
+        for (let k = 0; k < 4; k++) {
+          const w = weight[o + k]!;
+          if (w < 0.02) continue;
+          const bi = index[o + k]!;
+          if (/Brow/.test(this.names[bi]!)) brow += w;
+          const kind = this.lidKind[bi]!;
+          if (!kind) continue;
+          inf += w;
+          signed += kind * w;
+        }
+        const ey = rx >= 0
+          ? (this.iEyeL >= 0 ? this.rest[this.iEyeL * 3 + 1]! : ry)
+          : (this.iEyeR >= 0 ? this.rest[this.iEyeR * 3 + 1]! : ry);
+        if (inf > 0.35 && brow < 0.1 && ry < ey + 0.007) {
+          this.closeLidPos(rx, ry, rz, signed >= 0, this.closeAmt * Math.min(1, inf * 1.15), _from);
+          const fi = this.iFace >= 0 ? this.iFace : this.iHead;
+          if (fi >= 0) {
+            _to.set(_from.x - this.rest[fi * 3]!, _from.y - this.rest[fi * 3 + 1]!, _from.z - this.rest[fi * 3 + 2]!);
+            _to.applyQuaternion(this.wrot[fi]!);
+            _to.add(this.wpos[fi]!);
+            const u = THREE.MathUtils.clamp(inf * 1.2, 0, 1);
+            positions[i3] += (_to.x - positions[i3]) * u;
+            positions[i3 + 1] += (_to.y - positions[i3 + 1]) * u;
+            positions[i3 + 2] += (_to.z - positions[i3 + 2]) * u;
+          }
+        }
+      }
       const dy = ry - this.bustY;
       const chest =
         dy < 0.038
