@@ -1273,10 +1273,10 @@ export class SoftSkeleton {
     const ri = this.findIndex(/R_Breast_b_Phy/);
     const la = this.findIndex(/L_Breast_a_Phy/);
     const ra = this.findIndex(/R_Breast_a_Phy/);
-    if (li >= 0) this.q[li]!.setFromEuler(_e.set(this.brL.sy * spin * 0.9, this.brL.sx * spin * 0.75, this.brL.sz * spin * 0.35));
-    if (ri >= 0) this.q[ri]!.setFromEuler(_e.set(this.brR.sy * spin * 0.9, this.brR.sx * spin * 0.75, this.brR.sz * spin * 0.35));
-    if (la >= 0) this.q[la]!.setFromEuler(_e.set(this.brL.sy * spin * 0.34, this.brL.sx * spin * 0.28, 0));
-    if (ra >= 0) this.q[ra]!.setFromEuler(_e.set(this.brR.sy * spin * 0.34, this.brR.sx * spin * 0.28, 0));
+    if (li >= 0) this.q[li]!.setFromEuler(_e.set(this.brL.sy * spin * 0.62, this.brL.sx * spin * 0.58, this.brL.sz * spin * 0.22));
+    if (ri >= 0) this.q[ri]!.setFromEuler(_e.set(this.brR.sy * spin * 0.62, this.brR.sx * spin * 0.58, this.brR.sz * spin * 0.22));
+    if (la >= 0) this.q[la]!.setFromEuler(_e.set(this.brL.sy * spin * 0.22, this.brL.sx * spin * 0.2, 0));
+    if (ra >= 0) this.q[ra]!.setFromEuler(_e.set(this.brR.sy * spin * 0.22, this.brR.sx * spin * 0.2, 0));
   }
 
   private updateFK() {
@@ -1339,14 +1339,18 @@ export class SoftSkeleton {
           : 0;
       if (chest > 0.06) {
         const br = rx < 0 ? this.brL : this.brR;
-        const hang = THREE.MathUtils.clamp((this.bustY + 0.02 - ry) / 0.11, 0.12, 1);
-        const w = chest * (0.55 + 0.7 * hang);
-        const bounce = br.sy;
-        const squash = -bounce * 1.15;
-        const spread = Math.max(0, -bounce) * 0.55 * Math.sign(rx || 1);
-        positions[i3] += (br.sx * 1.2 + spread) * w;
-        positions[i3 + 1] += (bounce * 1.2 - Math.abs(br.sx) * 0.12) * w;
-        positions[i3 + 2] += (br.sz * 1.05 + squash * 0.55) * w;
+        const w = chest * 0.92;
+        const cx = Math.sign(rx || 1) * 0.09;
+        const cy = this.bustY - 0.016;
+        const cz = 0.082;
+        const lx = rx - cx;
+        const ly = ry - cy;
+        const lz = rz - cz;
+        const r = Math.hypot(lx, ly, lz) || 1;
+        const plump = Math.abs(br.sy) * 0.22 + Math.abs(br.sx) * 0.1;
+        positions[i3] += br.sx * 0.82 * w + (lx / r) * plump * w;
+        positions[i3 + 1] += br.sy * 0.78 * w + (ly / r) * plump * 0.35 * w;
+        positions[i3 + 2] += br.sz * 0.8 * w + (lz / r) * plump * w;
       }
     }
   }
