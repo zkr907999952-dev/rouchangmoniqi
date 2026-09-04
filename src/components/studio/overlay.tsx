@@ -32,7 +32,7 @@ import { EXPRESSIONS, POSES } from "@/lib/softbody/soft-skeleton";
 const SLIDERS: {
   id: keyof Pick<
     StudioParams,
-    "stiffness" | "damping" | "gravity" | "pressure" | "jiggle" | "wind" | "breathAmp" | "breathSpeed" | "abdomenXray" | "bellyInflate" | "navelDepth" | "navelDiameter" | "gutAmp" | "gutSpeed" | "breastSoft" | "breastDamp" | "hairDamp" | "fistBulge" | "fistSpread" | "fistGut" | "fistLever" | "fistMaxDepth" | "fistRise"
+    "stiffness" | "damping" | "gravity" | "pressure" | "jiggle" | "wind" | "breathAmp" | "breathSpeed" | "abdomenXray" | "bellyInflate" | "navelDepth" | "navelDiameter" | "gutAmp" | "gutSpeed" | "breastSoft" | "breastDamp" | "breastInertia" | "hairDamp" | "hairInertia" | "fistBulge" | "fistSpread" | "fistGut" | "fistLever" | "fistMaxDepth" | "fistRise"
   >;
   label: string;
   min: number;
@@ -55,7 +55,9 @@ const SLIDERS: {
   { id: "gutSpeed", label: "蠕动速度", min: 0, max: 1, step: 0.01 },
   { id: "breastSoft", label: "胸部柔软", min: 0, max: 1, step: 0.01 },
   { id: "breastDamp", label: "胸部阻尼", min: 0, max: 1, step: 0.01 },
+  { id: "breastInertia", label: "胸部惯性", min: 0, max: 1, step: 0.01 },
   { id: "hairDamp", label: "头发阻尼", min: 0, max: 1, step: 0.01 },
+  { id: "hairInertia", label: "头发惯性", min: 0, max: 1, step: 0.01 },
   { id: "fistBulge", label: "拳头鼓起", min: 0, max: 2, step: 0.01 },
   { id: "fistSpread", label: "鼓起范围", min: 0.2, max: 2, step: 0.01 },
   { id: "fistGut", label: "肠子撑开", min: 0, max: 2, step: 0.01 },

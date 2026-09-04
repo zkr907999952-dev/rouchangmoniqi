@@ -47,6 +47,8 @@ export type StudioParams = {
   breastSoft: number;
   breastDamp: number;
   hairDamp: number;
+  breastInertia: number;
+  hairInertia: number;
   bedStance: BedStance;
   uiHidden: boolean;
 };
@@ -97,6 +99,8 @@ export const PRESETS: Record<
     breastSoft: 0.02,
     breastDamp: 0.12,
     hairDamp: 0.01,
+    breastInertia: 0.55,
+    hairInertia: 0.55,
     bedStance: "front",
     uiHidden: false,
   },
@@ -142,6 +146,8 @@ export const PRESETS: Record<
     breastSoft: 0.02,
     breastDamp: 0.12,
     hairDamp: 0.01,
+    breastInertia: 0.55,
+    hairInertia: 0.55,
     bedStance: "front",
     uiHidden: false,
   },
@@ -187,6 +193,8 @@ export const PRESETS: Record<
     breastSoft: 0.02,
     breastDamp: 0.12,
     hairDamp: 0.01,
+    breastInertia: 0.55,
+    hairInertia: 0.55,
     bedStance: "front",
     uiHidden: false,
   },
@@ -232,6 +240,8 @@ export const PRESETS: Record<
     breastSoft: 0.02,
     breastDamp: 0.12,
     hairDamp: 0.01,
+    breastInertia: 0.55,
+    hairInertia: 0.55,
     bedStance: "front",
     uiHidden: false,
   },
@@ -323,6 +333,8 @@ export const useStudio = create<StudioState>((set) => ({
       breastSoft: s.breastSoft,
       breastDamp: s.breastDamp,
       hairDamp: s.hairDamp,
+      breastInertia: s.breastInertia,
+      hairInertia: s.hairInertia,
       breathAmp: s.breathAmp,
       breathSpeed: s.breathSpeed,
       showOrgans: s.showOrgans,

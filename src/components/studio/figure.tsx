@@ -1706,6 +1706,8 @@ function FittedFigure({
       breastSoft: s.breastSoft,
       breastDamp: s.breastDamp,
       hairDamp: s.hairDamp,
+      breastInertia: s.breastInertia,
+      hairInertia: s.hairInertia,
     });
     applyNavelMorph(setup.navelMorph, s.navelDepth, s.navelDiameter);
     gutExc.current += (0 - gutExc.current) * (1 - Math.exp(-0.42 * dt));

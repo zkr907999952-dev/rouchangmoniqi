@@ -28,6 +28,8 @@ export type SkelParams = {
   breastSoft: number;
   breastDamp: number;
   hairDamp: number;
+  breastInertia: number;
+  hairInertia: number;
 };
 
 export type ExpressionId = "rest" | "smile" | "surprise" | "open";
@@ -396,8 +398,8 @@ export class SoftSkeleton {
     const hx = this.rest[head * 3]!;
     const hy = this.rest[head * 3 + 1]!;
     const hz = this.rest[head * 3 + 2]!;
-    const phys = this.hairIds.slice(3);
-    const lockY = this.neckY - 0.02;
+    const phys = this.hairIds.slice(2);
+    const crownY = this.hairIds[1] !== undefined ? this.rest[this.hairIds[1]! * 3 + 1]! - 0.02 : this.headY - 0.04;
     const setBone = (i: number, a: number, wa: number, b: number, wb: number) => {
       const o = i * 4;
       index[o] = a;
@@ -415,18 +417,19 @@ export class SoftSkeleton {
       const y = rest[i * 3 + 1]!;
       const z = rest[i * 3 + 2]!;
       const dist = Math.hypot(x - hx, y - hy, z - hz);
-      const onSkull = y >= lockY || dist < 0.17 || (y > hy - 0.16 && z > -0.015);
-      if (onSkull || phys.length < 1) {
+      const isFront = z > -0.03;
+      const onCrown = y >= crownY || (dist < 0.11 && z > -0.05);
+      if (isFront || onCrown || phys.length < 1) {
         setBone(i, head, 1, head, 0);
         continue;
       }
       let k = 0;
       while (k < phys.length - 1 && y < this.rest[phys[k]! * 3 + 1]!) k++;
       if (k === 0) {
-        const y3 = this.rest[phys[0]! * 3 + 1]!;
-        const t = THREE.MathUtils.clamp((lockY - y) / Math.max(0.04, lockY - y3), 0, 1);
-        if (t < 0.2) setBone(i, head, 1, head, 0);
-        else setBone(i, head, 1 - t, phys[0]!, t);
+        const yTop = this.rest[phys[0]! * 3 + 1]!;
+        const t = THREE.MathUtils.clamp((crownY - y) / Math.max(0.04, crownY - yTop), 0, 1);
+        if (t < 0.12) setBone(i, head, 1, head, 0);
+        else setBone(i, head, 1 - t * 0.45, phys[0]!, t * 0.45);
         continue;
       }
       const a = phys[k - 1]!;
@@ -903,17 +906,18 @@ export class SoftSkeleton {
     const root = this.hairIds[0]!;
     const rp = this.wpos[root]!;
     const neckCut = this.neckY;
-    const pinned = (k: number) => k <= 2 || this.rest[this.hairIds[k]! * 3 + 1]! >= neckCut;
+    const pinned = (k: number) => k <= 1;
     this.hairP[0]!.copy(rp);
     this.hairPrev[0]!.copy(rp);
     const dt2 = d * d;
     const g = params.gravity * 1.8;
     const hd = THREE.MathUtils.clamp(params.hairDamp, 0, 1);
-    const keep = 0.985 - hd * 0.16;
-    const shape = 0.018 + hd * 0.07;
+    const hi = THREE.MathUtils.clamp(params.hairInertia, 0, 1);
+    const keep = 0.92 + hi * 0.07 - hd * 0.16;
+    const shape = 0.05 + hd * 0.07 - hi * 0.035;
     const yaw = this.yawF;
     const pitch = this.pitchF;
-    const maxStep = 0.035;
+    const maxStep = 0.02 + hi * 0.04;
     for (let k = 1; k < n; k++) {
       const p = this.hairP[k]!;
       const prev = this.hairPrev[k]!;
@@ -945,9 +949,9 @@ export class SoftSkeleton {
       }
       const u = Math.max(0, (k - 1) / Math.max(1, n - 2));
       prev.copy(p);
-      p.x += vx + (-yaw * 0.1 * u + params.wind * 0.5 * u) * dt2 * 60;
+      p.x += vx + (-yaw * 0.22 * u * hi + params.wind * 0.5 * u) * dt2 * 60;
       p.y += vy + g * dt2;
-      p.z += vz + pitch * 0.055 * u * dt2 * 60;
+      p.z += vz + pitch * 0.12 * u * hi * dt2 * 60;
       p.x += (rx - p.x) * shape;
       p.y += (ry - p.y) * shape * 0.75;
       p.z += (rz - p.z) * shape;
@@ -1180,6 +1184,7 @@ export class SoftSkeleton {
     const j = 0.55 + params.jiggle * 0.65;
     const soft = THREE.MathUtils.clamp(params.breastSoft, 0, 1);
     const bd = THREE.MathUtils.clamp(params.breastDamp, 0, 1);
+    const bi = THREE.MathUtils.clamp(params.breastInertia, 0, 1);
     const ci = this.findIndex(/C_Spine_d/);
     if (ci >= 0) {
       const p = this.wpos[ci]!;
@@ -1199,10 +1204,10 @@ export class SoftSkeleton {
       }
       this.chestPos.copy(p);
       this.chestVel.set(vx, vy, vz);
-      const mass = 0.0048 * (0.5 + soft);
-      const tX = -ax * mass * 0.55 * j - this.yawF * 0.012 * j - this.yawVel * 0.0022 * j;
-      const tY = -ay * mass * 0.7 * j - 0.014 * soft + Math.sin(this.breathT) * 0.004 * (0.4 + soft);
-      const tZ = -az * mass * 0.5 * j + Math.abs(this.yawF) * 0.005 * j + Math.max(0, -ay) * mass * 0.35;
+      const mass = 0.0048 * (0.5 + soft) * (0.25 + bi * 1.5);
+      const tX = (-ax * mass * 0.55 * j - this.yawF * 0.022 * j - this.yawVel * 0.004 * j) * bi;
+      const tY = -ay * mass * 0.7 * j * bi - 0.014 * soft + Math.sin(this.breathT) * 0.004 * (0.4 + soft);
+      const tZ = (-az * mass * 0.5 * j + Math.abs(this.yawF) * 0.009 * j + Math.max(0, -ay) * mass * 0.35) * bi;
       const w1 = 11.2 - soft * 3.4;
       const z1 = 0.2 + bd * 0.32;
       const k1 = w1 * w1;
