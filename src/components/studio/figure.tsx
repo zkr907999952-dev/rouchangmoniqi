@@ -1670,6 +1670,13 @@ function FittedFigure({
       }
     }
     const autoFist = s.fistThrust || s.fistStir;
+    if (s.gazeFollow) {
+      _target.copy(camera.position);
+      setup.root.worldToLocal(_target);
+      setup.skeleton.setGazeTarget(_target);
+    } else {
+      setup.skeleton.setGazeTarget(null);
+    }
     setup.fist.step(dt, {
       thrust: s.fistThrust,
       stir: s.fistStir,

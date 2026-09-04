@@ -271,6 +271,7 @@ type StudioState = StudioParams & {
   bayonetAuto: boolean;
   bayonetPump: boolean;
   bayonetKind: BayonetKind;
+  gazeFollow: boolean;
   setParam: <K extends keyof StudioParams>(key: K, value: StudioParams[K]) => void;
   applyPreset: (id: PresetId) => void;
   setInteractMode: (mode: InteractMode) => void;
@@ -284,7 +285,8 @@ type StudioState = StudioParams & {
   setBayonetPen: (v: number) => void;
   setBayonetAuto: (v: boolean) => void;
   setBayonetPump: (v: boolean) => void;
-  setBayonetKind: (v: BayonetKind) => void;
+  setBayonetKind: (kind: BayonetKind) => void;
+  setGazeFollow: (v: boolean) => void;
   shake: () => void;
   fireStrike: (point?: [number, number, number] | null) => void;
   resetSim: () => void;
@@ -316,6 +318,7 @@ export const useStudio = create<StudioState>((set) => ({
   bayonetAuto: false,
   bayonetPump: false,
   bayonetKind: "short",
+  gazeFollow: false,
   setParam: (key, value) =>
     set((s) => ({
       ...s,
@@ -380,6 +383,7 @@ export const useStudio = create<StudioState>((set) => ({
   setBayonetAuto: (bayonetAuto) => set((s) => ({ bayonetAuto, bayonetPump: bayonetAuto ? false : s.bayonetPump })),
   setBayonetPump: (bayonetPump) => set((s) => ({ bayonetPump, bayonetAuto: bayonetPump ? false : s.bayonetAuto })),
   setBayonetKind: (bayonetKind) => set({ bayonetKind, interactMode: "bayonet" }),
+  setGazeFollow: (gazeFollow) => set({ gazeFollow }),
   shake: () => set((s) => ({ shakeNonce: s.shakeNonce + 1 })),
   fireStrike: (point = null) =>
     set((s) => ({ strikeNonce: s.strikeNonce + 1, strikePoint: point ?? null })),

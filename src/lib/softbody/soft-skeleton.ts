@@ -152,6 +152,20 @@ export class SoftSkeleton {
   private pitchVel = 0;
   private yawF = 0;
   private pitchF = 0;
+  private gazeWant = false;
+  private gazeBlend = 0;
+  private gazeEyeBlend = 0;
+  private gazeNeckBlend = 0;
+  private readonly gazeTarget = new THREE.Vector3();
+  private readonly gazeNeckQ = new THREE.Quaternion();
+  private readonly gazeHeadQ = new THREE.Quaternion();
+  private readonly gazeEyeLQ = new THREE.Quaternion();
+  private readonly gazeEyeRQ = new THREE.Quaternion();
+  private iNeck = -1;
+  private iHead = -1;
+  private iSpine = -1;
+  private iEyeL = -1;
+  private iEyeR = -1;
   private readonly brL = { x: 0, y: 0, z: 0, vx: 0, vy: 0, vz: 0, sx: 0, sy: 0, sz: 0, svx: 0, svy: 0, svz: 0 };
   private readonly brR = { x: 0, y: 0, z: 0, vx: 0, vy: 0, vz: 0, sx: 0, sy: 0, sz: 0, svx: 0, svy: 0, svz: 0 };
   private readonly bindings: SkinBinding[] = [];
@@ -222,6 +236,11 @@ export class SoftSkeleton {
     }
     const neckI = this.byName["C_Neck_a"];
     this.neckY = neckI !== undefined ? this.rest[neckI * 3 + 1]! : this.headY - 0.08;
+    this.iNeck = this.byName["C_Neck_a"] ?? -1;
+    this.iHead = this.byName["C_Head_a"] ?? -1;
+    this.iSpine = this.byName["C_Spine_d"] ?? -1;
+    this.iEyeL = this.byName["L_Eye"] ?? -1;
+    this.iEyeR = this.byName["R_Eye"] ?? -1;
     for (let i = 0; i < this.count; i++) {
       if (this.group[i] !== "hair") continue;
       let d = 0;
@@ -596,6 +615,57 @@ export class SoftSkeleton {
     this.pitchVel = THREE.MathUtils.clamp(pitchVel, -8, 8);
   }
 
+  setGazeTarget(point: THREE.Vector3 | null) {
+    this.gazeWant = Boolean(point);
+    if (point) this.gazeTarget.copy(point);
+  }
+
+  private updateGaze(d: number) {
+    const neck = this.iNeck;
+    const head = this.iHead;
+    const spine = this.iSpine;
+    if (neck < 0 || head < 0 || spine < 0) {
+      this.gazeBlend += (0 - this.gazeBlend) * (1 - Math.exp(-8 * d));
+      return;
+    }
+    _from.copy(this.gazeTarget).sub(this.wpos[head]!);
+    const dist = _from.length();
+    if (dist < 0.02) {
+      this.gazeBlend += (0 - this.gazeBlend) * (1 - Math.exp(-8 * d));
+      return;
+    }
+    _from.multiplyScalar(1 / dist);
+    _axis.set(0, 0, 1).applyQuaternion(this.wrot[spine]!);
+    _to.set(1, 0, 0).applyQuaternion(this.wrot[spine]!);
+    _v.set(0, 1, 0).applyQuaternion(this.wrot[spine]!);
+    const fwd = _from.dot(_axis);
+    const right = _from.dot(_to);
+    const up = _from.dot(_v);
+    const yaw = Math.atan2(right, fwd);
+    const pitch = -Math.atan2(up, Math.hypot(right, fwd) || 1e-6);
+    const inRange =
+      this.gazeWant && Math.abs(yaw) < 1.78 && pitch > -1.32 && pitch < 1.12;
+    const want = inRange ? 1 : 0;
+    this.gazeBlend += (want - this.gazeBlend) * (1 - Math.exp(-6.5 * d));
+    this.gazeEyeBlend += (want - this.gazeEyeBlend) * (1 - Math.exp(-16 * d));
+    this.gazeNeckBlend += (want - this.gazeNeckBlend) * (1 - Math.exp(-3.4 * d));
+    if (this.gazeBlend < 0.002) this.gazeBlend = 0;
+    if (this.gazeEyeBlend < 0.002) this.gazeEyeBlend = 0;
+    if (this.gazeNeckBlend < 0.002) this.gazeNeckBlend = 0;
+    const neckYaw = THREE.MathUtils.clamp(yaw * 0.64, -1.22, 1.22);
+    let restYaw = yaw - neckYaw;
+    const headYaw = THREE.MathUtils.clamp(restYaw * 0.55, -0.55, 0.55);
+    const eyeYaw = THREE.MathUtils.clamp(restYaw - headYaw, -0.52, 0.52);
+    const neckPitch = THREE.MathUtils.clamp(pitch * 0.72, -0.88, 1.18);
+    let restPitch = pitch - neckPitch;
+    const headPitch = THREE.MathUtils.clamp(restPitch * 0.55, -0.45, 0.55);
+    const eyePitch = THREE.MathUtils.clamp(restPitch - headPitch, -0.42, 0.48);
+    this.gazeNeckQ.setFromEuler(_e.set(neckPitch, neckYaw, 0, "YXZ"));
+    this.gazeHeadQ.setFromEuler(_e.set(headPitch, headYaw, 0, "YXZ"));
+    this.gazeEyeLQ.setFromEuler(_e.set(eyePitch, eyeYaw, 0, "YXZ"));
+    this.gazeEyeRQ.setFromEuler(_e.set(eyePitch, eyeYaw, 0, "YXZ"));
+  }
+
   commitPose() {
     for (let i = 0; i < this.count; i++) {
       this.poseQ[i]!.copy(this.q[i]!);
@@ -777,6 +847,7 @@ export class SoftSkeleton {
     this.yawF += (this.yawVel - this.yawF) * follow;
     this.pitchF += (this.pitchVel - this.pitchF) * follow;
     this.applyHoldPose();
+    this.updateGaze(d);
     const h = this.hold;
     const held = h && h.kind !== "tissue" ? h.bone : -1;
     const heldParent = held >= 0 ? this.parent[held] : -1;
@@ -784,6 +855,7 @@ export class SoftSkeleton {
     const stiff = 14 + params.stiffness * 18;
     const damp = 6 + params.damping * 7;
     const jiggle = 0.4 + params.jiggle * 0.85;
+    const gb = this.gazeBlend;
 
     for (let i = 0; i < this.count; i++) {
       const g = this.group[i];
@@ -792,7 +864,33 @@ export class SoftSkeleton {
       const qv = this.qv[i]!;
       const isFace = g === "face";
       if (g === "hair" || /Breast_[ab]_Phy/.test(this.names[i]!)) continue;
-      const targetQ = isFace && this.expression !== "rest" ? this.exprQ[i]! : this.poseQ[i]!;
+      let targetQ = isFace && this.expression !== "rest" ? this.exprQ[i]! : this.poseQ[i]!;
+      if (!locked && (this.gazeEyeBlend > 0.01 || this.gazeNeckBlend > 0.01 || gb > 0.01)) {
+        if (i === this.iNeck) {
+          _q2.copy(this.poseQ[i]!).slerp(this.gazeNeckQ, this.gazeNeckBlend);
+          targetQ = _q2;
+        } else if (i === this.iHead) {
+          _q2.copy(this.poseQ[i]!).slerp(this.gazeHeadQ, this.gazeBlend);
+          targetQ = _q2;
+        } else if (i === this.iEyeL) {
+          _q2.copy(targetQ).slerp(this.gazeEyeLQ, this.gazeEyeBlend);
+          targetQ = _q2;
+        } else if (i === this.iEyeR) {
+          _q2.copy(targetQ).slerp(this.gazeEyeRQ, this.gazeEyeBlend);
+          targetQ = _q2;
+        }
+      }
+      if (
+        !locked &&
+        ((i === this.iEyeL || i === this.iEyeR) && this.gazeEyeBlend > 0.08 ||
+          i === this.iHead && gb > 0.12 ||
+          i === this.iNeck && this.gazeNeckBlend > 0.12)
+      ) {
+        const k = i === this.iEyeL || i === this.iEyeR ? 22 : i === this.iHead ? 7.2 : 3.4;
+        q.slerp(targetQ, 1 - Math.exp(-k * d));
+        qv.set(0, 0, 0);
+        continue;
+      }
       if (!locked) {
         _q.copy(q).invert().multiply(targetQ);
         const ang = 2 * Math.acos(Math.min(1, Math.abs(_q.w)));

@@ -106,6 +106,8 @@ export function Overlay() {
   const selectedBoneName = useStudio((s) => s.selectedBoneName);
   const setInteractMode = useStudio((s) => s.setInteractMode);
   const setPoseEditMode = useStudio((s) => s.setPoseEditMode);
+  const gazeFollow = useStudio((s) => s.gazeFollow);
+  const setGazeFollow = useStudio((s) => s.setGazeFollow);
   const grabbing = useStudio((s) => s.grabbing);
   const loading = useStudio((s) => s.loading);
   const loadProgress = useStudio((s) => s.loadProgress);
@@ -825,6 +827,20 @@ export function Overlay() {
                     ? "点关节后拖红/绿/蓝环，绕该轴旋转。"
                     : "点关节后拖坐标轴，移动该节点。"}
                 {selectedBoneName ? ` 当前：${selectedBoneName}` : ""}
+              </p>
+              <button
+                type="button"
+                onClick={() => setGazeFollow(!gazeFollow)}
+                className={cn(
+                  "mt-3 inline-flex h-10 w-full items-center justify-center gap-1.5 rounded-md text-[12px] font-medium",
+                  gazeFollow ? "bg-accent text-accent-fg" : "border border-border bg-surface-2 text-muted hover:text-fg",
+                )}
+              >
+                <Eye className="size-3.5" />
+                视线跟随
+              </button>
+              <p className="mt-1.5 text-xs leading-relaxed text-muted">
+                开启后眼睛和脖子在人类活动范围内看向镜头。转到背后超出范围时会停止注视。
               </p>
               <p className="mt-4 mb-1.5 text-xs text-muted">表情</p>
               <div className="grid grid-cols-4 gap-1">
