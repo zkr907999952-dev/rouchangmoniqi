@@ -340,7 +340,9 @@ export class SoftSkeleton {
       const belly =
         smoother(Math.abs(y - ny), 0.11) * smoother(Math.abs(x), 0.13) * front;
       const chest =
-        smoother(Math.abs(y - by), 0.09) * smoother(Math.abs(Math.abs(x) - 0.07), 0.08) * front;
+        (y < by + 0.035 ? smoother(Math.abs(y - by + 0.012), 0.078) : 0) *
+        smoother(Math.abs(Math.abs(x) - 0.09), 0.052) *
+        THREE.MathUtils.clamp((z - 0.03) / 0.09, 0, 1);
       const cheek = hint === "face" || hint === "mouth" ? smoother(Math.abs(y - (hy - 0.03)), 0.04) : 0;
       let soft = 0.12;
       if (hint === "dress") soft = 0.22 + belly * 0.7 + chest * 0.78;
@@ -376,7 +378,10 @@ export class SoftSkeleton {
       colors[i * 3 + 2] = _c.b;
       const front = THREE.MathUtils.clamp((z + 0.02) / 0.12, 0, 1);
       const belly = smoother(Math.abs(y - ny), 0.11) * smoother(Math.abs(x), 0.13) * front;
-      const chest = smoother(Math.abs(y - by), 0.09) * smoother(Math.abs(Math.abs(x) - 0.07), 0.08) * front;
+      const chest =
+        (y < by + 0.035 ? smoother(Math.abs(y - by + 0.012), 0.078) : 0) *
+        smoother(Math.abs(Math.abs(x) - 0.09), 0.052) *
+        THREE.MathUtils.clamp((z - 0.03) / 0.09, 0, 1);
       const cheek = hint === "face" || hint === "mouth" ? smoother(Math.abs(y - (hy - 0.03)), 0.04) : 0;
       let soft = 0.12;
       if (hint === "dress") soft = 0.22 + belly * 0.7 + chest * 0.78;
@@ -1088,7 +1093,9 @@ export class SoftSkeleton {
         let ty = 0;
         let tz = 0;
         const belly = smoother(Math.abs(y - ny), 0.12) * smoother(Math.abs(x), 0.14);
-        const chest = smoother(Math.abs(y - by), 0.1) * smoother(Math.abs(Math.abs(x) - 0.07), 0.09);
+        const chest =
+          (y < by + 0.035 ? smoother(Math.abs(y - by + 0.012), 0.078) : 0) *
+          smoother(Math.abs(Math.abs(x) - 0.09), 0.052);
         const front = THREE.MathUtils.clamp((z + 0.01) / 0.11, 0, 1);
         tz += breath * 0.72 * belly * front;
         if (params.fistDepth > 0.002) {
@@ -1323,20 +1330,23 @@ export class SoftSkeleton {
       positions[i3] = ox + delta[i3]!;
       positions[i3 + 1] = oy + delta[i3 + 1]!;
       positions[i3 + 2] = oz + delta[i3 + 2]!;
+      const dy = ry - this.bustY;
       const chest =
-        smoother(Math.abs(ry - this.bustY), 0.17) *
-        smoother(Math.abs(Math.abs(rx) - 0.08), 0.13) *
-        THREE.MathUtils.clamp((rz + 0.015) / 0.15, 0, 1);
-      if (chest > 0.03) {
+        dy < 0.038
+          ? smoother(Math.abs(dy + 0.016), 0.085) *
+            smoother(Math.abs(Math.abs(rx) - 0.09), 0.055) *
+            THREE.MathUtils.clamp((rz - 0.038) / 0.085, 0, 1)
+          : 0;
+      if (chest > 0.06) {
         const br = rx < 0 ? this.brL : this.brR;
-        const hang = THREE.MathUtils.clamp((this.bustY + 0.05 - ry) / 0.16, 0.18, 1);
-        const w = chest * (0.7 + 0.85 * hang);
+        const hang = THREE.MathUtils.clamp((this.bustY + 0.02 - ry) / 0.11, 0.12, 1);
+        const w = chest * (0.55 + 0.7 * hang);
         const bounce = br.sy;
         const squash = -bounce * 1.15;
-        const spread = Math.max(0, -bounce) * 0.7 * Math.sign(rx || 1);
-        positions[i3] += (br.sx * 1.35 + spread) * w;
-        positions[i3 + 1] += (bounce * 1.35 - Math.abs(br.sx) * 0.18) * w;
-        positions[i3 + 2] += (br.sz * 1.15 + squash * 0.7) * w;
+        const spread = Math.max(0, -bounce) * 0.55 * Math.sign(rx || 1);
+        positions[i3] += (br.sx * 1.2 + spread) * w;
+        positions[i3 + 1] += (bounce * 1.2 - Math.abs(br.sx) * 0.12) * w;
+        positions[i3 + 2] += (br.sz * 1.05 + squash * 0.55) * w;
       }
     }
   }
